@@ -20,6 +20,9 @@ def quantize_and_bitflip(i_value, i_quantizer, pos=0):
     i_value:     float that is not quantized
     i_quantizer: qkeras quantizer
     """
+    # TODO: i_value should be matrix of weights/a kernel. Therefore, we should
+    # 1) quantize everything, 2) select the weights to be fault injected, 3)
+    # inject faults, 4) write fault-injected weights back into quantized kernel
     quant_config = i_quantizer.get_config()
     scaling_exponent = quant_config["bits"] - quant_config["integer"]
     
@@ -30,6 +33,8 @@ def quantize_and_bitflip(i_value, i_quantizer, pos=0):
     result = float_to_fp(result, scaling_exponent)
     
     #S: Integer to binary string
+    print(f"Type of result: {type(result)}")
+    print(f"Result: {result}")
     result = int_to_binstr(result)
     
     #S: Update position to be little-endian

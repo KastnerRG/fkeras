@@ -1,7 +1,7 @@
 from qkeras import QDense
 from keras import backend
+from fkeras.utils import quantize_and_bitflip
 import tensorflow.compat.v2 as tf
-
 
 class FQDense(QDense):
     """
@@ -15,11 +15,11 @@ class FQDense(QDense):
     parameters.
     """
 
-    def __init__(self, ber, bit_loc, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, units, ber=1.0, bit_loc=0, **kwargs):
         self.ber = ber
         self.bit_loc = bit_loc
 
+        super(FQDense, self).__init__(units=units, **kwargs)
 
     # def call(self, inputs):
         # original_kernel = self.kernel
@@ -40,12 +40,18 @@ class FQDense(QDense):
         # return super_outputs
 
     def call(self, inputs):
-        # if self.kernel_quantizer:
-        #     quantized_kernel = self.kernel_quantizer_internal(self.kernel)
-        # else:
-        #     quantized_kernel = self.kernel
-        
-        faulty_qkernel = ?
+        # TODO: Implement bit error rate
+        # if inducing error, get faulty_qkernel
+        # else: do 
+            # if self.kernel_quantizer:
+            #     quantized_kernel = self.kernel_quantizer_internal(self.kernel)
+            # else:
+            #     quantized_kernel = self.kernel
+        # NOTE: Assuming BER = 1.0 (i.e., always error) for now
+        faulty_qkernel = quantize_and_bitflip(
+            self.kernel, 
+            self.kernel_quantizer_internal
+        )
         output = tf.keras.backend.dot(inputs, faulty_qkernel)
         if self.use_bias:
             if self.bias_quantizer:
