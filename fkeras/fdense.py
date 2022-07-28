@@ -15,7 +15,7 @@ class FQDense(QDense):
     parameters.
     """
 
-    def __init__(self, units, ber=1.0, bit_loc=0, **kwargs):
+    def __init__(self, units, ber=0.0, bit_loc=0, **kwargs):
         self.ber = ber
         self.bit_loc = bit_loc
 
@@ -50,7 +50,9 @@ class FQDense(QDense):
         # NOTE: Assuming BER = 1.0 (i.e., always error) for now
         faulty_qkernel = quantize_and_bitflip(
             self.kernel, 
-            self.kernel_quantizer_internal
+            self.kernel_quantizer_internal,
+            self.bit_loc,
+            self.ber
         )
         output = tf.keras.backend.dot(inputs, faulty_qkernel)
         if self.use_bias:
