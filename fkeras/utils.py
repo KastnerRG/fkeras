@@ -19,8 +19,9 @@ def binstr_to_int(x):
 
 def get_tensor_size(i_tensor):
     num_of_elems = 1
-    for x in list(t.shape):
+    for x in list(i_tensor.shape):
         num_of_elems = num_of_elems*x
+        print(num_of_elems)
     return num_of_elems
 
 def get_fault_indices(i_tensor, num_faults):
@@ -72,25 +73,22 @@ def quantize_and_bitflip(i_values, i_quantizer, pos=0, ber=0.0):
     #####  we iterate through bits instead of weights
     for i in range(num_faults):
         curr_val = result[i]
+        # print(f"FL#1: curr_val = {curr_val} | {i}")
 
         #S: Turn float to fixed-point representation (an integer)
         curr_val = float_to_fp(curr_val, scaling_exponent)
 
         #S: Integer to binary string
-        # print(f"Type of curr_val: {type(curr_val)}")
-        # print(f"curr_val: {curr_val}")
         curr_val = int_to_binstr(curr_val, quant_config["bits"])
 
         #S: Update position to be little-endian
-        pos = -1 - pos 
+        curr_pos = -1 - pos 
 
         #S: Turn binary string to list of characters
         curr_val = list(curr_val)
 
         #S: Flip the indicated bit
-        # print(f"Position: {pos}")
-        # print(f"curr_val: {curr_val}")
-        curr_val[pos] = "0" if "1" == curr_val[pos] else "1"
+        curr_val[curr_pos] = "0" if "1" == curr_val[curr_pos] else "1"
 
         #S: Turn list of characters to binary string
         curr_val = "".join(curr_val)
@@ -103,6 +101,7 @@ def quantize_and_bitflip(i_values, i_quantizer, pos=0, ber=0.0):
         
         #S: Update i_values/result
         result[i] = curr_val
+        
         
     #S: Reshape i_values
     result = tf.reshape(result, i_values.shape)
