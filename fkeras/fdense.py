@@ -47,7 +47,6 @@ class FQDense(QDense):
             #     quantized_kernel = self.kernel_quantizer_internal(self.kernel)
             # else:
             #     quantized_kernel = self.kernel
-        # NOTE: Assuming BER = 1.0 (i.e., always error) for now
         faulty_qkernel = quantize_and_bitflip(
             self.kernel, 
             self.kernel_quantizer_internal,

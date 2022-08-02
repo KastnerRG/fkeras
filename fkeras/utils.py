@@ -9,9 +9,9 @@ def fp_to_float(x, scaling_exponent):
     """x is an integer"""
     return x * (2 ** -scaling_exponent)
 
-def int_to_binstr(x):
-    """x is an python int object"""
-    return format(x, "b")#BitArray(hex=x).bin
+def int_to_binstr(x, bit_width): 
+    """x is an python int object""" 
+    return format(x, "b").rjust(bit_width, '0')
 
 def binstr_to_int(x):
     """x is a little-endian binary string"""
@@ -21,7 +21,6 @@ def get_tensor_size(i_tensor):
     num_of_elems = 1
     for x in list(i_tensor.shape):
         num_of_elems = num_of_elems*x
-        print(num_of_elems)
     return num_of_elems
 
 def get_fault_indices(i_tensor, num_faults):
@@ -49,19 +48,15 @@ def quantize_and_bitflip(i_values, i_quantizer, pos=0, ber=0.0):
     """
     i_values:    a float matrix of non-quantized model parameters
     i_quantizer: qkeras quantizer
-    """
-    # TODO: i_value should be matrix of weights/a kernel. Therefore, we should
-    # 1) quantize everything, 2) select the weights to be fault injected, 3)
-    # inject faults, 4) write fault-injected weights back into quantized kernel
-    
+    """ 
     #S: Get quantization configuration
     quant_config = i_quantizer.get_config()
     scaling_exponent = quant_config["bits"] - quant_config["integer"]
     
     #S: Determine the number of faults to inject
-    #S: TODO: Update the way we determine the num_faults
-    # num_faults = int(get_tensor_size(i_values) * quant_config["bits"] * ber)
-    num_faults = int(get_tensor_size(i_values) * ber)
+    num_faults = int(get_tensor_size(i_values) * quant_config["bits"] * ber)
+    # vvvvvvvvvv - Number of faults determined on weight level
+    # num_faults = int(get_tensor_size(i_values) * ber) 
     
     #S: Get quantized values (represented as floats)
     result = i_quantizer(i_values)
@@ -74,7 +69,8 @@ def quantize_and_bitflip(i_values, i_quantizer, pos=0, ber=0.0):
     for i in range(num_faults):
         curr_val = result[i]
         # print(f"FL#1: curr_val = {curr_val} | {i}")
-
+        
+        # TODO: Make this stuff below its own function
         #S: Turn float to fixed-point representation (an integer)
         curr_val = float_to_fp(curr_val, scaling_exponent)
 
@@ -107,3 +103,11 @@ def quantize_and_bitflip(i_values, i_quantizer, pos=0, ber=0.0):
     result = tf.reshape(result, i_values.shape)
     
     return result
+
+# For later, do things at weight-level?
+# If you want to specify bit position(s), then ber = 1 and you must provide a Weight error
+# rate. 
+
+# If you want to specify bit region + ber, then provide (list of ) bit regions
+# and a (list of) bit error rates, where bit region at index i has bit error
+# rate at index i. 
