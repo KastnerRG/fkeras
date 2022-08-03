@@ -1,6 +1,7 @@
 from qkeras import QDense
 from keras import backend
-from fkeras.utils import quantize_and_bitflip
+import fkeras as fk
+from fkeras.utils import gen_lbi_region_at_layer_level, quantize_and_bitflip
 import tensorflow.compat.v2 as tf
 
 class FQDense(QDense):
@@ -43,15 +44,31 @@ class FQDense(QDense):
         # TODO: Implement bit error rate
         # if inducing error, get faulty_qkernel
         # else: do 
+            # Original qkeras
             # if self.kernel_quantizer:
             #     quantized_kernel = self.kernel_quantizer_internal(self.kernel)
             # else:
             #     quantized_kernel = self.kernel
+        # faulty_qkernel = quantize_and_bitflip(
+        #     self.kernel, 
+        #     self.kernel_quantizer_internal,
+        #     self.bit_loc,
+        #     self.ber
+        # )
+
+        #TODO: Update the following code block with function call that
+        ###### returns the same lbi region
+        quant_config = self.kernel_quantizer_internal.get_config()
+        faulty_layer_bit_region = gen_lbi_region_at_layer_level(
+            self.kernel,
+            quant_config['bits'],
+            self.ber
+        )[0]
         faulty_qkernel = quantize_and_bitflip(
             self.kernel, 
-            self.kernel_quantizer_internal,
-            self.bit_loc,
-            self.ber
+            self.kernel_quantizer_internal, 
+            [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
+            [faulty_layer_bit_region.ber]
         )
         output = tf.keras.backend.dot(inputs, faulty_qkernel)
         if self.use_bias:

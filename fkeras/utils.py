@@ -43,6 +43,46 @@ def get_fault_indices(i_tensor, num_faults):
     
     return list(indices)
 
+class LayerBitRegion: 
+    def __init__(self, i_start_lbi, end_lbi): 
+        self.start_lbi = i_start_lbi 
+        self.end_lbi = end_lbi 
+
+class FaultyLayerBitRegion(LayerBitRegion):
+    def __init__(self, i_start_lbi, end_lbi, ber):
+        super().__init__(i_start_lbi, end_lbi)
+        self.ber = ber
+
+def gen_lbi_region_from_weight_level(
+    i_tensor, 
+    i_bit_width, 
+    i_bit_pos, 
+    little_endian=True, 
+    ber=None): 
+    # TODO: Fix this. This is just copied code from other places.
+    # gen_lbi_region_from_weight_level(test_tensor, 8, 0) 
+    lbi_regions = list() 
+    region_bers = list() 
+    for i in range(0, get_tensor_size(i_tensor)): 
+        if little_endian: 
+            inclusive_reg_start = wb_index_to_lb_index((i,i_bit_pos), i_bit_width)
+            inclusive_reg_end = wb_index_to_lb_index((i,i_bit_pos), i_bit_width) 
+        else: 
+            inclusive_reg_start = wb_index_to_lb_index((i,i_bit_pos), i_bit_width) 
+            inclusive_reg_end = wb_index_to_lb_index((i,i_bit_pos), i_bit_width) 
+        inclusive_reg_start = wb_index_to_lb_index((i, i_bit_pos), i_bit_width)
+        inclusive_reg_end = wb_index_to_lb_index((i, i_bit_pos), i_bit_width)
+        lbi_regions.append( (inclusive_reg_start, inclusive_reg_end) ) 
+        region_bers.append(1.0) 
+        return lbi_regions, region_bers 
+
+def gen_lbi_region_at_layer_level(i_tensor, i_bit_width, ber):
+    """
+    Given a BER for a given layer, generate a single LayerBitRegion
+    """
+    return [FaultyLayerBitRegion(0, get_tensor_size(i_tensor) * i_bit_width, ber)]
+
+
 def lb_index_to_wb_index(i_lbi, i_bit_width, little_endian=True):
     """
     Translates a layer-bit index (LBI) to a weight-bit index (WBI)
@@ -82,7 +122,7 @@ def quantize_and_bitflip(i_values, i_quantizer, regions, bers):
     i_values:    a float matrix of non-quantized model parameters
     i_quantizer: qkeras quantizer
     """
-    # TODO: i_value should be matrix of weights/a kernel. Therefore, we should
+    # NOTE: i_value should be matrix of weights/a kernel. Therefore, we should
     # 1) quantize everything, 2) select the weights to be fault injected, 3)
     # inject faults, 4) write fault-injected weights back into quantized kernel
     
