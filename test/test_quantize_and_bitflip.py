@@ -18,12 +18,12 @@ def test_bitflip_zero_tensor():
     
     #TODO: Update the following code block with function call that
     ###### returns the same lbi region
-    my_bit_pos = a_test_position
+    my_bit_pos = 0
     my_test_regions = list()
     my_test_bers = list()
     for i in range(0,16):
-        inclusive_reg_start = wb_index_to_lb_index((i,my_bit_pos), 8)
-        inclusive_reg_end   = wb_index_to_lb_index((i,my_bit_pos), 8)
+        inclusive_reg_start = fk.utils.wb_index_to_lb_index((i,my_bit_pos), 8)
+        inclusive_reg_end   = fk.utils.wb_index_to_lb_index((i,my_bit_pos), 8)
         my_test_regions.append( (inclusive_reg_start, inclusive_reg_end) )
         my_test_bers.append(1.0)
 
@@ -46,12 +46,12 @@ def test_zero_ber():
     
     #TODO: Update the following code block with function call that
     ###### returns the same lbi region
-    my_bit_pos = a_test_position
+    my_bit_pos = 0
     my_test_regions = list()
     my_test_bers = list()
     for i in range(0,16):
-        inclusive_reg_start = wb_index_to_lb_index((i,my_bit_pos), 8)
-        inclusive_reg_end   = wb_index_to_lb_index((i,my_bit_pos), 8)
+        inclusive_reg_start = fk.utils.wb_index_to_lb_index((i,my_bit_pos), 8)
+        inclusive_reg_end   = fk.utils.wb_index_to_lb_index((i,my_bit_pos), 8)
         my_test_regions.append( (inclusive_reg_start, inclusive_reg_end) )
         my_test_bers.append(0.0)
 
