@@ -1,8 +1,10 @@
 from qkeras import QDense
 from keras import backend
 import fkeras as fk
-from fkeras.utils import gen_lbi_region_at_layer_level, quantize_and_bitflip
+from fkeras.utils import gen_lbi_region_at_layer_level, quantize_and_bitflip, FKERAS_quantize_and_bitflip
 import tensorflow.compat.v2 as tf
+
+assert tf.executing_eagerly(), "QKeras requires TF with eager execution mode on"
 
 class FQDense(QDense):
     """
@@ -70,6 +72,12 @@ class FQDense(QDense):
             [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
             [faulty_layer_bit_region.ber]
         )
+        # print(f"[fkeras - Dense.call()] {tf.executing_eagerly()}")
+        # faulty_qkernel = FKERAS_quantize_and_bitflip( 
+        #     self.kernel_quantizer_internal, 
+        #     [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
+        #     [faulty_layer_bit_region.ber]
+        # )(self.kernel)
         output = tf.keras.backend.dot(inputs, faulty_qkernel)
         if self.use_bias:
             if self.bias_quantizer:

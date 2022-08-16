@@ -1,6 +1,8 @@
 import tensorflow.compat.v2 as tf
 import numpy as np
-
+import time
+assert tf.executing_eagerly(), "QKeras requires TF with eager execution mode on"
+    
 def float_to_fp(x, scaling_exponent):
     """x is a float"""
     return int(x * (2 ** scaling_exponent))
@@ -117,81 +119,77 @@ def wb_index_to_lb_index(i_wbi, i_bit_width, little_endian=True):
     else:
         return (i_wbi[0]*i_bit_width) + (i_wbi[1])
 
+class FKERAS_quantize_and_bitflip(tf.Module):
+    def __init__(self, i_quantizer, regions, bers):
+    # def __init__(self, i_quantizer, regions, bers, Name=None):
+        # super(FKERAS_quantize_and_bitflip, self).__init__(name=name)
+        self.built = False
+        self.i_quantizer = i_quantizer
+        self.regions = regions
+        self.bers = bers
+        
+    def _set_trainable_parameter(self):
+        pass
+    # Override not to expose the quantizer variables.
+    @property
+    def variables(self):
+        return ()
+
+    # Override not to expose the quantizer variables.
+    @property
+    def trainable_variables(self):
+        return ()
+
+    # Override not to expose the quantizer variables.
+    @property
+    def non_trainable_variables(self):
+        return ()
+    
+    def __call__(self, x):
+        i_values = x
+        i_quantizer = self.i_quantizer
+        regions = self.regions
+        bers = self.bers
+        print(f"[fkeras] {tf.executing_eagerly()}")
+        if tf.executing_eagerly():
+            print(f"[fkeras] {type(x.numpy())}")
+        
+        return i_quantizer(i_values)
+    
+
+def full_tensor_quantize_and_bit_flip(i_tensor, i_scaling_exp):
+    og_dtype = i_tensor.dtype
+    i_tensor = i_tensor*(2**i_scaling_exp)
+    i_tensor = tf.cast(i_tensor, tf.int64)
+    i_tensor = tf.bitwise.bitwise_xor(i_tensor, tf.convert_to_tensor(np.full(i_tensor.shape, 0), dtype=tf.int64))
+    i_tensor = tf.cast(i_tensor, og_dtype)
+    i_tensor = i_tensor*(2** -i_scaling_exp)
+    i_tensor = i_tensor*0
+
 def quantize_and_bitflip(i_values, i_quantizer, regions, bers):
     """
     i_values:    a float matrix of non-quantized model parameters
     i_quantizer: qkeras quantizer
     """
-    # NOTE: i_value should be matrix of weights/a kernel. Therefore, we should
-    # 1) quantize everything, 2) select the weights to be fault injected, 3)
-    # inject faults, 4) write fault-injected weights back into quantized kernel
-    
+
     #S: Get quantization configuration
     quant_config = i_quantizer.get_config()
     scaling_exponent = quant_config["bits"] - quant_config["integer"]
     
-    # #S: Determine the number of faults to inject
-    # #S: TODO: Update the way we determine the num_faults
-    # # num_faults = int(get_tensor_size(i_values) * quant_config["bits"] * ber)
-    # num_faults = int(get_tensor_size(i_values) * ber)
-    # print(f"Num_faults: {num_faults}")
-    
     #S: Get quantized values (represented as floats)
     result = i_quantizer(i_values)
     
-    #S: Flatten i_values
-    result = result.numpy().flatten()
-    print(f"Flattened Result = {result}")
-    
+    og_dtype = result.dtype
+    result = result*(2**scaling_exponent)
+    # result = tf.stop_gradient(tf.cast(result, tf.int64))
+    new_result = tf.stop_gradient(tf.cast( 
+                                      tf.bitwise.bitwise_xor( tf.cast(result, tf.int64), tf.convert_to_tensor(np.full(result.shape, 0), dtype=tf.int64)),
+                                      og_dtype
+                                     ) 
+                             )
 
-    #S:  Iterate through every region
-    for r_i, region in enumerate(regions):
-        
-        #S: Determine the number of bits in region
-        ### Assumptions: (1) region bounds are inclusive
-        ### and (2) bounds are in layer-bit index form
-        num_rbits = region[1] - region[0] + 1
-        
-        #S: Determine the number of faults in region
-        num_rfaults = int(num_rbits * bers[r_i])
-        
-        for lbi in range(region[0], region[0]+num_rfaults):
-            #S: Translate layer-bit index to weight-bit index
-            w_i, b_pos = lb_index_to_wb_index(lbi, quant_config["bits"], True)
-            
-            #S: Get the weight containing the bit
-            ### to be flipped/updated
-            curr_val = result[w_i]
+    result = result + new_result
+    result = result*(2** -scaling_exponent)
 
-            #S: Turn float to fixed-point representation (an integer)
-            curr_val = float_to_fp(curr_val, scaling_exponent)
-
-            #S: Integer to binary string
-            curr_val = int_to_binstr(curr_val, quant_config["bits"])
-
-            #S: Update position to be little-endian
-            curr_pos = -1 - b_pos 
-
-            #S: Turn binary string to list of characters
-            curr_val = list(curr_val)
-
-            #S: Flip the indicated bit
-            curr_val[curr_pos] = "0" if "1" == curr_val[curr_pos] else "1"
-
-            #S: Turn list of characters to binary string
-            curr_val = "".join(curr_val)
-
-            #S: Turn binary string to integer
-            curr_val = binstr_to_int(curr_val)
-
-            #S: Turn to integer into float
-            curr_val = fp_to_float(curr_val, scaling_exponent)
-
-            #S: Update i_values/result
-            result[w_i] = curr_val
-        
-        
-    #S: Reshape i_values
-    result = tf.reshape(result, i_values.shape)
     
     return result
