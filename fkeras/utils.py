@@ -156,15 +156,37 @@ class FKERAS_quantize_and_bitflip(tf.Module):
         
         return i_quantizer(i_values)
     
+    
+def gen_mask_tensor(i_tensor, i_ber, i_qbits):
+    #S: Generate the mask array (default value is 0)
+    mask_array = np.full(i_tensor.shape, 0).flatten()
+    
+    #S: Determine the number of bits in region
+    num_rbits = mask_array.size * i_qbits
+    
+    #S: Determine the number of faults to inject
+    num_rfaults = int(num_rbits * i_ber)
+    
+    #S: Inject faults
+    faults_injected = 0
+    while faults_injected < num_rfaults:
+        mask_array[faults_injected%mask_array.size] = mask_array[faults_injected%mask_array.size]\
+                                                    + 2**(faults_injected//mask_array.size)
+        faults_injected = faults_injected + 1
+        
+        
+    return tf.convert_to_tensor(np.reshape(mask_array, i_tensor.shape), dtype=tf.int64)
 
-def full_tensor_quantize_and_bit_flip(i_tensor, i_scaling_exp):
+def full_tensor_quantize_and_bit_flip(i_tensor, i_scaling_exp, i_ber, i_qbits):
     og_dtype = i_tensor.dtype
     i_tensor = i_tensor*(2**i_scaling_exp)
     i_tensor = tf.cast(i_tensor, tf.int64)
-    i_tensor = tf.bitwise.bitwise_xor(i_tensor, tf.convert_to_tensor(np.full(i_tensor.shape, 0), dtype=tf.int64))
+    # i_tensor = tf.bitwise.bitwise_xor(i_tensor, tf.convert_to_tensor(np.full(i_tensor.shape, 1<<63), dtype=tf.int64))
+    i_tensor = tf.bitwise.bitwise_xor(i_tensor, gen_mask_tensor(i_tensor, i_ber, i_qbits))
     i_tensor = tf.cast(i_tensor, og_dtype)
     i_tensor = i_tensor*(2** -i_scaling_exp)
-    i_tensor = i_tensor*0
+    
+    return i_tensor
 
 def quantize_and_bitflip(i_values, i_quantizer, regions, bers):
     """
@@ -182,13 +204,21 @@ def quantize_and_bitflip(i_values, i_quantizer, regions, bers):
     og_dtype = result.dtype
     result = result*(2**scaling_exponent)
     # result = tf.stop_gradient(tf.cast(result, tf.int64))
-    new_result = tf.stop_gradient(tf.cast( 
-                                      tf.bitwise.bitwise_xor( tf.cast(result, tf.int64), tf.convert_to_tensor(np.full(result.shape, 0), dtype=tf.int64)),
-                                      og_dtype
-                                     ) 
-                             )
-
+    # new_result = tf.stop_gradient(tf.cast( 
+    #                                   tf.bitwise.bitwise_xor( tf.cast(result, tf.int64), tf.convert_to_tensor(np.full(result.shape, 0), dtype=tf.int64)),
+    #                                   og_dtype
+    #                                  ) 
+    #                          )
+    new_result = tf.stop_gradient(full_tensor_quantize_and_bit_flip(result, scaling_exponent, bers[0], quant_config["bits"]))
+    
+    # tf.print("Before")
+    # tf.print(result)
+          
     result = result + new_result
+    
+    # tf.print("After")
+    # tf.print(result)
+    
     result = result*(2** -scaling_exponent)
 
     
