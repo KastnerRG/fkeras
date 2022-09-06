@@ -1,7 +1,7 @@
 from qkeras import QDense
 from keras import backend
 import fkeras as fk
-from fkeras.utils import gen_lbi_region_at_layer_level, quantize_and_bitflip, FKERAS_quantize_and_bitflip
+from fkeras.utils import gen_lbi_region_at_layer_level, quantize_and_bitflip
 import tensorflow.compat.v2 as tf
 
 assert tf.executing_eagerly(), "QKeras requires TF with eager execution mode on"
@@ -41,6 +41,12 @@ class FQDense(QDense):
         # if backend.learning_phase() == 0:
             
         # return super_outputs
+    
+    def set_ber(self, ber):
+        self.ber = ber
+
+    def get_ber(self):
+        return self.ber
 
     def call(self, inputs):
         # TODO: Implement bit error rate
