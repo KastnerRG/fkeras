@@ -2,6 +2,7 @@ import tensorflow.compat.v2 as tf
 import numpy as np
 import time
 assert tf.executing_eagerly(), "QKeras requires TF with eager execution mode on"
+import random
     
 def float_to_fp(x, scaling_exponent):
     """x is a float"""
@@ -157,7 +158,7 @@ class FKERAS_quantize_and_bitflip(tf.Module):
         return i_quantizer(i_values)
     
     
-def gen_mask_tensor(i_tensor, i_ber, i_qbits):
+def gen_mask_tensor_deterministic(i_tensor, i_ber, i_qbits):
     #S: Generate the mask array (default value is 0)
     mask_array = np.full(i_tensor.shape, 0).flatten()
     
@@ -177,12 +178,33 @@ def gen_mask_tensor(i_tensor, i_ber, i_qbits):
         
     return tf.convert_to_tensor(np.reshape(mask_array, i_tensor.shape), dtype=tf.int64)
 
+def gen_mask_tensor_random(i_tensor, i_ber, i_qbits):
+    #S: Generate the mask array (default value is 0)
+    mask_array = np.full(i_tensor.shape, 0).flatten()
+    
+    #S: Determine the number of bits in region
+    num_rbits = mask_array.size * i_qbits
+    
+    #S: Determine the number of faults to inject
+    num_rfaults = int(num_rbits * i_ber)
+    
+    #S: Generate list of randomly sampled bit indices
+    faults_to_inject = random.sample(range(num_rbits), num_rfaults)
+    
+    #S: Inject random faults
+    faults_injected = 0
+    for fault_loc in faults_to_inject:
+        mask_array[fault_loc%mask_array.size] = mask_array[fault_loc%mask_array.size]\
+                                                    + 2**(fault_loc//mask_array.size)        
+        
+    return tf.convert_to_tensor(np.reshape(mask_array, i_tensor.shape), dtype=tf.int64)
+
 def full_tensor_quantize_and_bit_flip(i_tensor, i_scaling_exp, i_ber, i_qbits):
     og_dtype = i_tensor.dtype
     i_tensor = i_tensor*(2**i_scaling_exp)
     i_tensor = tf.cast(i_tensor, tf.int64)
     # i_tensor = tf.bitwise.bitwise_xor(i_tensor, tf.convert_to_tensor(np.full(i_tensor.shape, 1<<63), dtype=tf.int64))
-    i_tensor = tf.bitwise.bitwise_xor(i_tensor, gen_mask_tensor(i_tensor, i_ber, i_qbits))
+    i_tensor = tf.bitwise.bitwise_xor(i_tensor, gen_mask_tensor_random(i_tensor, i_ber, i_qbits))
     i_tensor = tf.cast(i_tensor, og_dtype)
     i_tensor = i_tensor*(2** -i_scaling_exp)
     
