@@ -20,6 +20,7 @@ class FQDense(QDense):
 
     def __init__(self, units, ber=0.0, bit_loc=0, **kwargs):
         self.ber = ber
+        self.units = units
         self.bit_loc = bit_loc
 
         super(FQDense, self).__init__(units=units, **kwargs)
@@ -48,29 +49,27 @@ class FQDense(QDense):
     def get_ber(self):
         return self.ber
 
-    def call(self, inputs):
-        # TODO: Implement bit error rate
-        # if inducing error, get faulty_qkernel
-        # else: do 
-            # Original qkeras
-            # if self.kernel_quantizer:
-            #     quantized_kernel = self.kernel_quantizer_internal(self.kernel)
-            # else:
-            #     quantized_kernel = self.kernel
-        # faulty_qkernel = quantize_and_bitflip(
-        #     self.kernel, 
-        #     self.kernel_quantizer_internal,
-        #     self.bit_loc,
-        #     self.ber
-        # )
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'units': self.units,
+            'ber': self.ber,
+            'bit_loc': self.bit_loc,
+        })
+        return config
 
+    def call(self, inputs):
+        # backend.learning_phase() (0 is Test | 1 is Train)
+        # ^ jk this doesn't work >:(
+        if self.ber == 0:
+            return super().call(inputs)
         #TODO: Update the following code block with function call that
         ###### returns the same lbi region
         quant_config = self.kernel_quantizer_internal.get_config()
         faulty_layer_bit_region = gen_lbi_region_at_layer_level(
             self.kernel,
             quant_config['bits'],
-            self.ber
+            self.ber,
         )[0]
         faulty_qkernel = quantize_and_bitflip(
             self.kernel, 
@@ -78,12 +77,6 @@ class FQDense(QDense):
             [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
             [faulty_layer_bit_region.ber]
         )
-        # print(f"[fkeras - Dense.call()] {tf.executing_eagerly()}")
-        # faulty_qkernel = FKERAS_quantize_and_bitflip( 
-        #     self.kernel_quantizer_internal, 
-        #     [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
-        #     [faulty_layer_bit_region.ber]
-        # )(self.kernel)
         output = tf.keras.backend.dot(inputs, faulty_qkernel)
         if self.use_bias:
             if self.bias_quantizer:

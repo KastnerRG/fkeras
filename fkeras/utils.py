@@ -236,7 +236,7 @@ def quantize_and_bitflip(i_values, i_quantizer, regions, bers):
     # tf.print("Before")
     # tf.print(result)
           
-    result = result + new_result
+    result = result + new_result # TODO: Is there a better way?
     
     # tf.print("After")
     # tf.print(result)

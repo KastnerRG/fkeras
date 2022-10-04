@@ -21,6 +21,8 @@ class FQConv2D(QConv2D):
     def __init__(self, filters, kernel_size, ber=0.0, bit_loc=0, **kwargs):
         self.ber = ber
         self.bit_loc = bit_loc
+        self.filters = filters
+        self.kernel_size = kernel_size
 
         super(FQConv2D, self).__init__(
             filters=filters, 
@@ -34,12 +36,28 @@ class FQConv2D(QConv2D):
     def get_ber(self):
         return self.ber
 
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'ber': self.ber,
+            'bit_loc': self.bit_loc,
+            'filters': self.filters,
+            'kernel_size': self.kernel_size,
+        })
+        return config
+
     def call(self, inputs):
+        # TODO: if ber is 0, then just call qkeras call()
+        # backend.learning_phase() (0 is Test | 1 is Train) 
+        # ^ JK this doesn't work
+        if self.ber == 0:
+            return super().call(inputs)
+
         quant_config = self.kernel_quantizer_internal.get_config()
         faulty_layer_bit_region = gen_lbi_region_at_layer_level(
             self.kernel,
             quant_config['bits'],
-            self.ber
+            self.ber,
         )[0]
 
         faulty_qkernel = quantize_and_bitflip(
@@ -55,7 +73,8 @@ class FQConv2D(QConv2D):
             strides=self.strides,
             padding=self.padding,
             data_format=self.data_format,
-            dilation_rate=self.dilation_rate)
+            dilation_rate=self.dilation_rate
+        )
 
         if self.use_bias:
             if self.bias_quantizer:
