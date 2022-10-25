@@ -1,6 +1,7 @@
 from qkeras import QDense
 from keras import backend
 import fkeras as fk
+import numpy as np
 from fkeras.utils import gen_lbi_region_at_layer_level, quantize_and_bitflip
 import tensorflow.compat.v2 as tf
 
@@ -61,8 +62,8 @@ class FQDense(QDense):
     def call(self, inputs):
         # backend.learning_phase() (0 is Test | 1 is Train)
         # ^ jk this doesn't work >:(
-        if self.ber == 0:
-            return super().call(inputs)
+        # if self.ber == 0:
+        #     return super().call(inputs)
         #TODO: Update the following code block with function call that
         ###### returns the same lbi region
         quant_config = self.kernel_quantizer_internal.get_config()
@@ -77,6 +78,15 @@ class FQDense(QDense):
             [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
             [faulty_layer_bit_region.ber]
         )
+
+        # Useful for debugging purposes
+        # qkernel = self.kernel_quantizer_internal(self.kernel)
+        # equality_tensor = tf.math.equal(qkernel, faulty_qkernel)
+        # tf.print("Equality tensor:")
+        # tf.print(equality_tensor)
+        # tf.print("Reduced equality tensor:")
+        # tf.print(tf.math.reduce_all(equality_tensor))
+
         output = tf.keras.backend.dot(inputs, faulty_qkernel)
         if self.use_bias:
             if self.bias_quantizer:

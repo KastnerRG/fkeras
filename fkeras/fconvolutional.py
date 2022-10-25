@@ -50,8 +50,8 @@ class FQConv2D(QConv2D):
         # TODO: if ber is 0, then just call qkeras call()
         # backend.learning_phase() (0 is Test | 1 is Train) 
         # ^ JK this doesn't work
-        if self.ber == 0:
-            return super().call(inputs)
+        # if self.ber == 0:
+        #     return super().call(inputs)
 
         quant_config = self.kernel_quantizer_internal.get_config()
         faulty_layer_bit_region = gen_lbi_region_at_layer_level(
