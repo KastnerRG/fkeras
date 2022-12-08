@@ -20,7 +20,7 @@ import io
 import setuptools
 
 with io.open("README.md", "r", encoding="utf8") as fh:
-  long_description = fh.read()
+    long_description = fh.read()
 
 setuptools.setup(
     name="FKeras",
@@ -45,7 +45,7 @@ setuptools.setup(
         "keras-tuner>=1.0.1",
         "scikit-learn>=0.23.1",
         "tqdm>=4.48.0",
-        "qkeras>=0.9.0"
+        "qkeras>=0.9.0",
     ],
     setup_requires=[
         "pytest-runner",

@@ -6,13 +6,14 @@ import tensorflow.compat.v2 as tf
 
 assert tf.executing_eagerly(), "QKeras requires TF with eager execution mode on"
 
+
 class FQConv2D(QConv2D):
     """
     Implements a faulty QConv2D layer
 
     Parameters:
     * ber (float): Bit Error Rate, or how often you want a fault to occur
-    * bit_loc (list of tuples): Target ranges for the bit errors, e.g., (0, 3) targets bits at index 0 through 3, where 0 is the LSB. 
+    * bit_loc (list of tuples): Target ranges for the bit errors, e.g., (0, 3) targets bits at index 0 through 3, where 0 is the LSB.
 
     Please refer to the documentation of QDense in QKeras for the other
     parameters.
@@ -25,9 +26,7 @@ class FQConv2D(QConv2D):
         self.kernel_size = kernel_size
 
         super(FQConv2D, self).__init__(
-            filters=filters, 
-            kernel_size=kernel_size, 
-            **kwargs
+            filters=filters, kernel_size=kernel_size, **kwargs
         )
 
     def set_ber(self, ber):
@@ -38,30 +37,32 @@ class FQConv2D(QConv2D):
 
     def get_config(self):
         config = super().get_config().copy()
-        config.update({
-            'ber': self.ber,
-            'bit_loc': self.bit_loc,
-            'filters': self.filters,
-            'kernel_size': self.kernel_size,
-        })
+        config.update(
+            {
+                "ber": self.ber,
+                "bit_loc": self.bit_loc,
+                "filters": self.filters,
+                "kernel_size": self.kernel_size,
+            }
+        )
         return config
 
     def call(self, inputs):
-        if self.ber == 0: # For speed
+        if self.ber == 0:  # For speed
             return super().call(inputs)
 
         quant_config = self.kernel_quantizer_internal.get_config()
         faulty_layer_bit_region = gen_lbi_region_at_layer_level(
             self.kernel,
-            quant_config['bits'],
+            quant_config["bits"],
             self.ber,
         )[0]
 
         faulty_qkernel = quantize_and_bitflip(
-            self.kernel, 
-            self.kernel_quantizer_internal, 
-            [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
-            [faulty_layer_bit_region.ber]
+            self.kernel,
+            self.kernel_quantizer_internal,
+            [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
+            [faulty_layer_bit_region.ber],
         )
 
         # Useful for debugging purposes
@@ -71,14 +72,14 @@ class FQConv2D(QConv2D):
         # tf.print(equality_tensor)
         # tf.print("Reduced CONV equality tensor:")
         # tf.print(tf.math.reduce_all(equality_tensor)) # Logical and across all elements of tensor
-        
+
         outputs = tf.keras.backend.conv2d(
             inputs,
             faulty_qkernel,
             strides=self.strides,
             padding=self.padding,
             data_format=self.data_format,
-            dilation_rate=self.dilation_rate
+            dilation_rate=self.dilation_rate,
         )
 
         if self.use_bias:
@@ -88,7 +89,8 @@ class FQConv2D(QConv2D):
                 quantized_bias = self.bias
 
         outputs = tf.keras.backend.bias_add(
-            outputs, quantized_bias, data_format=self.data_format)
+            outputs, quantized_bias, data_format=self.data_format
+        )
 
         if self.activation is not None:
             return self.activation(outputs)

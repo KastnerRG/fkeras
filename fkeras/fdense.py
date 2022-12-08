@@ -7,13 +7,14 @@ import tensorflow.compat.v2 as tf
 
 assert tf.executing_eagerly(), "QKeras requires TF with eager execution mode on"
 
+
 class FQDense(QDense):
     """
     Implements a faulty QDense layer
 
     Parameters:
     * ber (float): Bit Error Rate, or how often you want a fault to occur
-    * bit_loc (list of tuples): Target ranges for the bit errors, e.g., (0, 3) targets bits at index 0 through 3, where 0 is the LSB. 
+    * bit_loc (list of tuples): Target ranges for the bit errors, e.g., (0, 3) targets bits at index 0 through 3, where 0 is the LSB.
 
     Please refer to the documentation of QDense in QKeras for the other
     parameters.
@@ -25,7 +26,7 @@ class FQDense(QDense):
         self.bit_loc = bit_loc
 
         super(FQDense, self).__init__(units=units, **kwargs)
-    
+
     def set_ber(self, ber):
         self.ber = ber
 
@@ -34,29 +35,31 @@ class FQDense(QDense):
 
     def get_config(self):
         config = super().get_config().copy()
-        config.update({
-            'units': self.units,
-            'ber': self.ber,
-            'bit_loc': self.bit_loc,
-        })
+        config.update(
+            {
+                "units": self.units,
+                "ber": self.ber,
+                "bit_loc": self.bit_loc,
+            }
+        )
         return config
 
     def call(self, inputs):
-        if self.ber == 0: # For speed
+        if self.ber == 0:  # For speed
             return super().call(inputs)
-        #TODO: Update the following code block with function call that
+        # TODO: Update the following code block with function call that
         ###### returns the same lbi region
         quant_config = self.kernel_quantizer_internal.get_config()
         faulty_layer_bit_region = gen_lbi_region_at_layer_level(
             self.kernel,
-            quant_config['bits'],
+            quant_config["bits"],
             self.ber,
         )[0]
         faulty_qkernel = quantize_and_bitflip(
-            self.kernel, 
-            self.kernel_quantizer_internal, 
-            [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
-            [faulty_layer_bit_region.ber]
+            self.kernel,
+            self.kernel_quantizer_internal,
+            [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
+            [faulty_layer_bit_region.ber],
         )
 
         # Useful for debugging purposes
@@ -73,11 +76,9 @@ class FQDense(QDense):
                 quantized_bias = self.bias_quantizer_internal(self.bias)
             else:
                 quantized_bias = self.bias
-            output = tf.keras.backend.bias_add(output, quantized_bias,
-                                            data_format="channels_last")
+            output = tf.keras.backend.bias_add(
+                output, quantized_bias, data_format="channels_last"
+            )
         if self.activation is not None:
             output = self.activation(output)
         return output
-
-
-
