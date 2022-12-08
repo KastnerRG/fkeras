@@ -25,24 +25,6 @@ class FQDense(QDense):
         self.bit_loc = bit_loc
 
         super(FQDense, self).__init__(units=units, **kwargs)
-
-    # def call(self, inputs):
-        # original_kernel = self.kernel
-
-        # self.kernel = faulty_kernel
-
-        # super_outputs = super().call(inputs)
-
-        # self.kernel = original_kernel
-
-
-        # super_outputs = super().call(inputs)
-        # # TODO: Induce bitflips at ber at the indicated bit_loc
-        # pass
-        # #backend.learning_phase() (0 is Test | 1 is Train)
-        # if backend.learning_phase() == 0:
-            
-        # return super_outputs
     
     def set_ber(self, ber):
         self.ber = ber
@@ -60,10 +42,8 @@ class FQDense(QDense):
         return config
 
     def call(self, inputs):
-        # backend.learning_phase() (0 is Test | 1 is Train)
-        # ^ jk this doesn't work >:(
-        # if self.ber == 0:
-        #     return super().call(inputs)
+        if self.ber == 0: # For speed
+            return super().call(inputs)
         #TODO: Update the following code block with function call that
         ###### returns the same lbi region
         quant_config = self.kernel_quantizer_internal.get_config()
@@ -84,8 +64,8 @@ class FQDense(QDense):
         # equality_tensor = tf.math.equal(qkernel, faulty_qkernel)
         # tf.print("Equality tensor:")
         # tf.print(equality_tensor)
-        # tf.print("Reduced equality tensor:")
-        # tf.print(tf.math.reduce_all(equality_tensor))
+        # tf.print("Reduced DENSE equality tensor:")
+        # tf.print(tf.math.reduce_all(equality_tensor)) # Logical and across all elements of tensor
 
         output = tf.keras.backend.dot(inputs, faulty_qkernel)
         if self.use_bias:

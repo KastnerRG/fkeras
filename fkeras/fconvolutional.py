@@ -47,11 +47,8 @@ class FQConv2D(QConv2D):
         return config
 
     def call(self, inputs):
-        # TODO: if ber is 0, then just call qkeras call()
-        # backend.learning_phase() (0 is Test | 1 is Train) 
-        # ^ JK this doesn't work
-        # if self.ber == 0:
-        #     return super().call(inputs)
+        if self.ber == 0: # For speed
+            return super().call(inputs)
 
         quant_config = self.kernel_quantizer_internal.get_config()
         faulty_layer_bit_region = gen_lbi_region_at_layer_level(
@@ -66,6 +63,14 @@ class FQConv2D(QConv2D):
             [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)], 
             [faulty_layer_bit_region.ber]
         )
+
+        # Useful for debugging purposes
+        # qkernel = self.kernel_quantizer_internal(self.kernel)
+        # equality_tensor = tf.math.equal(qkernel, faulty_qkernel)
+        # tf.print("Equality tensor:")
+        # tf.print(equality_tensor)
+        # tf.print("Reduced CONV equality tensor:")
+        # tf.print(tf.math.reduce_all(equality_tensor)) # Logical and across all elements of tensor
         
         outputs = tf.keras.backend.conv2d(
             inputs,

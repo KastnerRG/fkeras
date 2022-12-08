@@ -119,43 +119,6 @@ def wb_index_to_lb_index(i_wbi, i_bit_width, little_endian=True):
         return (i_wbi[0]*i_bit_width) + (i_bit_width - i_wbi[1]-1)
     else:
         return (i_wbi[0]*i_bit_width) + (i_wbi[1])
-
-class FKERAS_quantize_and_bitflip(tf.Module):
-    def __init__(self, i_quantizer, regions, bers):
-    # def __init__(self, i_quantizer, regions, bers, Name=None):
-        # super(FKERAS_quantize_and_bitflip, self).__init__(name=name)
-        self.built = False
-        self.i_quantizer = i_quantizer
-        self.regions = regions
-        self.bers = bers
-        
-    def _set_trainable_parameter(self):
-        pass
-    # Override not to expose the quantizer variables.
-    @property
-    def variables(self):
-        return ()
-
-    # Override not to expose the quantizer variables.
-    @property
-    def trainable_variables(self):
-        return ()
-
-    # Override not to expose the quantizer variables.
-    @property
-    def non_trainable_variables(self):
-        return ()
-    
-    def __call__(self, x):
-        i_values = x
-        i_quantizer = self.i_quantizer
-        regions = self.regions
-        bers = self.bers
-        print(f"[fkeras] {tf.executing_eagerly()}")
-        if tf.executing_eagerly():
-            print(f"[fkeras] {type(x.numpy())}")
-        
-        return i_quantizer(i_values)
     
     
 def gen_mask_tensor_deterministic(i_tensor, i_ber, i_qbits):
@@ -192,7 +155,6 @@ def gen_mask_tensor_random(i_tensor, i_ber, i_qbits):
     faults_to_inject = random.sample(range(num_rbits), num_rfaults)
     
     #S: Inject random faults
-    faults_injected = 0
     for fault_loc in faults_to_inject:
         mask_array[fault_loc%mask_array.size] = mask_array[fault_loc%mask_array.size]\
                                                     + 2**(fault_loc//mask_array.size)        
@@ -203,8 +165,10 @@ def full_tensor_quantize_and_bit_flip(i_tensor, i_scaling_exp, i_ber, i_qbits):
     og_dtype = i_tensor.dtype
     i_tensor = i_tensor*(2**i_scaling_exp)
     i_tensor = tf.cast(i_tensor, tf.int64)
-    # i_tensor = tf.bitwise.bitwise_xor(i_tensor, tf.convert_to_tensor(np.full(i_tensor.shape, 1<<63), dtype=tf.int64))
-    i_tensor = tf.bitwise.bitwise_xor(i_tensor, gen_mask_tensor_random(i_tensor, i_ber, i_qbits))
+    i_tensor = tf.bitwise.bitwise_xor(
+        i_tensor, 
+        gen_mask_tensor_random(i_tensor, i_ber, i_qbits)
+    )
     i_tensor = tf.cast(i_tensor, og_dtype)
     i_tensor = i_tensor*(2** -i_scaling_exp)
     
@@ -223,24 +187,15 @@ def quantize_and_bitflip(i_values, i_quantizer, regions, bers):
     #S: Get quantized values (represented as floats)
     result = i_quantizer(i_values)
     
-    og_dtype = result.dtype
     result = result*(2**scaling_exponent)
-    # result = tf.stop_gradient(tf.cast(result, tf.int64))
-    # new_result = tf.stop_gradient(tf.cast( 
-    #                                   tf.bitwise.bitwise_xor( tf.cast(result, tf.int64), tf.convert_to_tensor(np.full(result.shape, 0), dtype=tf.int64)),
-    #                                   og_dtype
-    #                                  ) 
-    #                          )
-    new_result = tf.stop_gradient(full_tensor_quantize_and_bit_flip(result, scaling_exponent, bers[0], quant_config["bits"]))
-    
-    # tf.print("Before")
-    # tf.print(result)
-          
+    new_result = full_tensor_quantize_and_bit_flip(
+        result, 
+        scaling_exponent, 
+        bers[0], 
+        quant_config["bits"]
+    )    
     result = new_result
-
-    # tf.print("After")
-    # tf.print(result)
-    
+    # Convert back to float
     result = result*(2** -scaling_exponent)
 
     
