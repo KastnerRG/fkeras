@@ -7,6 +7,8 @@ from collections import OrderedDict, defaultdict
 SUPPORTED_LAYERS = ["FQDense", "FQConv2D"]  # TODO: Get list from fkeras itself?
 # Though not all layers have BERs...
 
+# Layers that have no parameters to bit flip
+NON_PARAM_LAYERS = ["InputLayer", "QActivation", "Flatten"]
 
 class FModel:
     def __init__(self, model, model_param_ber=0):
@@ -69,6 +71,9 @@ class FModel:
             # TODO: Need separate branch for when SUPPORTED_LAYERS includes
             # regular float Keras layers, i.e., shouldn't check if layer has any
             # quantizers.
+            elif layer.__class__.__name__ in NON_PARAM_LAYERS:
+                # Skip layers that have no parameters
+                continue
             else:
                 # Float Keras or unsupported QKeras layer
                 raise NotImplementedError(
@@ -76,14 +81,17 @@ class FModel:
                 )
         # TODO: Separate above out into separate function set_layer_bit_ranges()
         # so that we only have to compute it once.
-        num_faults = num_model_param_bits * self.model_param_ber
-        bits_to_flip = random.sample(range(num_model_param_bits), num_faults).sort()
+        num_faults = int(num_model_param_bits * self.model_param_ber)
+        print(f"num_faults = {num_faults}")
+        bits_to_flip = random.sample(list(range(num_model_param_bits)), num_faults)
+        bits_to_flip.sort()
         for bit in bits_to_flip:
-            for range in layer_bit_ranges.keys():
-                if bit >= range[0] and bit < range[1]:  # If bit within range
+            for r in layer_bit_ranges.keys():
+                if bit >= r[0] and bit < r[1]:  # If bit within range
                     bits_to_flip_per_layer[layer.name] += 1
 
         for layer in self.model.layers:
-            layer.set_ber(
-                bits_to_flip_per_layer[layer.name] / num_bits_per_layer[layer.name]
-            )
+            if layer.__class__.__name__ in SUPPORTED_LAYERS:
+                layer.set_ber(
+                    bits_to_flip_per_layer[layer.name] / num_bits_per_layer[layer.name]
+                )
