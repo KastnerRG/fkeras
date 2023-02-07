@@ -42,7 +42,6 @@ def get_fault_indices(i_tensor, num_faults):
 
     # S: Generate num_faults-many indices
     while len(indices) < num_faults:
-
         # S: Define the next fault index
         curr_fault = list()
 

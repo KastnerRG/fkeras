@@ -10,12 +10,13 @@ SUPPORTED_LAYERS = ["FQDense", "FQConv2D"]  # TODO: Get list from fkeras itself?
 # Layers that have no parameters to bit flip
 NON_PARAM_LAYERS = ["InputLayer", "QActivation", "Flatten"]
 
+
 class FModel:
     def __init__(self, model, model_param_ber=0):
         self.model = model
         self.model_param_ber = model_param_ber
         self._set_layer_bit_ranges()
-        self._set_model_param_ber() 
+        self._set_model_param_ber()
         self.layer_bit_ranges = {}
         # self.num_model_param_bits = 0
         # TODO: Set layer_bit_ranges and num_model_param_bits
@@ -73,12 +74,14 @@ class FModel:
 
         If you want to run multiple trials of the same faulty model
         (defined by the flipped bits), call this function for each trial.
-        
+
         The number of faults to be injected into the model's parameters = len(bits_to_flip).
         """
         bits_to_flip_per_layer = defaultdict(int)
-        #num_faults = int(self.num_model_param_bits * self.model_param_ber)
-        print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] num_faults = {len(bits_to_flip)}")
+        # num_faults = int(self.num_model_param_bits * self.model_param_ber)
+        print(
+            f"[fkeras.fmodel.explicit_select_model_param_bitflip] num_faults = {len(bits_to_flip)}"
+        )
         # bits_to_flip = random.sample(list(range(self.num_model_param_bits)), num_faults)
         bits_to_flip.sort()
         for bit in bits_to_flip:
@@ -89,7 +92,8 @@ class FModel:
         for layer in self.model.layers:
             if layer.__class__.__name__ in SUPPORTED_LAYERS:
                 layer.set_ber(
-                    bits_to_flip_per_layer[layer.name] / self.num_bits_per_layer[layer.name]
+                    bits_to_flip_per_layer[layer.name]
+                    / self.num_bits_per_layer[layer.name]
                 )
 
     def random_select_model_param_bitflip(self):
@@ -119,5 +123,6 @@ class FModel:
         for layer in self.model.layers:
             if layer.__class__.__name__ in SUPPORTED_LAYERS:
                 layer.set_ber(
-                    bits_to_flip_per_layer[layer.name] / self.num_bits_per_layer[layer.name]
+                    bits_to_flip_per_layer[layer.name]
+                    / self.num_bits_per_layer[layer.name]
                 )
