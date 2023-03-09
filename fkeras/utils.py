@@ -83,7 +83,7 @@ def gen_lbi_region_from_weight_level(
         inclusive_reg_end = wb_index_to_lb_index((i, i_bit_pos), i_bit_width)
         lbi_regions.append((inclusive_reg_start, inclusive_reg_end))
         region_bers.append(1.0)
-        return lbi_regions, region_bers
+    return lbi_regions, region_bers
 
 
 def gen_lbi_region_at_layer_level(i_tensor, i_bit_width, ber):
@@ -149,6 +149,59 @@ def gen_mask_tensor_deterministic(i_tensor, i_ber, i_qbits):
 
     return tf.convert_to_tensor(np.reshape(mask_array, i_tensor.shape), dtype=tf.int64)
 
+def gen_mask_tensor_deterministic_v2(i_tensor, i_ber, i_qbits, i_keep_negative=0):
+    # S: Generate the mask array (default value is 0)
+    mask_array = np.full(i_tensor.shape, 0).flatten()
+
+    # S: Determine the number of bits in region
+    num_rbits = mask_array.size * i_qbits
+
+    # S: Determine the number of faults to inject
+    num_rfaults = int(num_rbits * i_ber)
+
+    # S: Inject faults
+    faults_injected = 0
+    while faults_injected < num_rfaults:
+        mask_array[faults_injected % mask_array.size] = mask_array[
+            faults_injected % mask_array.size
+        ] + 2 ** (faults_injected // mask_array.size)
+        faults_injected = faults_injected + 1
+
+    sign_mask = 2**(i_qbits - i_keep_negative)
+    rval_mask = sign_mask -1
+    for i in range(mask_array.shape[0]):
+        mask_array[i] = (mask_array[i] & rval_mask) - (mask_array[i] & sign_mask)
+
+    return tf.convert_to_tensor(np.reshape(mask_array, i_tensor.shape), dtype=tf.int64)
+
+
+def gen_mask_tensor_deterministic_v3(i_tensor, i_flbirs, i_qbits, i_keep_negative=0):
+    # S: Generate the mask array (default value is 0)
+    mask_array = np.full(i_tensor.shape, 0).flatten()
+
+    # S: Inject faults
+    for curr_flbir in i_flbirs:
+        #S: Get the start LBI and end LBI
+        s_lbi, e_lbi, rber = (curr_flbir.start_lbi, curr_flbir.end_lbi, curr_flbir.ber)
+
+        #S: Get the weight bit index representation of the LBI
+        ### TODO: This code assumes a region of a single bit (s_lbi == e_lbi)
+        ### Update this code to be more general.
+        s_wbi = lb_index_to_wb_index(s_lbi,i_qbits)
+        
+        #S: Flip the bit of indicated weight
+        mask_array[s_wbi[0]] = mask_array[s_wbi[0]] | (1 << s_wbi[1])
+
+
+    sign_mask = 2**(i_qbits - i_keep_negative)
+    rval_mask = sign_mask -1
+    for i in range(mask_array.shape[0]):
+        mask_array[i] = (mask_array[i] & rval_mask) - (mask_array[i] & sign_mask)
+
+    # tf.print(mask_array)
+
+    return tf.convert_to_tensor(np.reshape(mask_array, i_tensor.shape), dtype=tf.int64)
+
 
 def gen_mask_tensor_random(i_tensor, i_ber, i_qbits):
     # S: Generate the mask array (default value is 0)
@@ -172,6 +225,42 @@ def gen_mask_tensor_random(i_tensor, i_ber, i_qbits):
     return tf.convert_to_tensor(np.reshape(mask_array, i_tensor.shape), dtype=tf.int64)
 
 
+def full_tensor_quantize_and_bit_flip_deterministic(i_tensor, i_scaling_exp, i_ber, i_qbits):
+    og_dtype = i_tensor.dtype
+    i_tensor = i_tensor * (2**i_scaling_exp)
+    i_tensor = tf.cast(i_tensor, tf.int64)
+    i_tensor = tf.bitwise.bitwise_xor(
+        i_tensor, gen_mask_tensor_deterministic(i_tensor, i_ber, i_qbits)
+    )
+    i_tensor = tf.cast(i_tensor, og_dtype)
+    i_tensor = i_tensor * (2**-i_scaling_exp)
+
+    return i_tensor
+
+def full_tensor_quantize_and_bit_flip_deterministic_v2(i_tensor, i_scaling_exp, i_ber, i_qbits, i_keep_negative=0):
+    og_dtype = i_tensor.dtype
+    i_tensor = i_tensor * (2**i_scaling_exp)
+    i_tensor = tf.cast(i_tensor, tf.int64)
+    i_tensor = tf.bitwise.bitwise_xor(
+        i_tensor, gen_mask_tensor_deterministic_v2(i_tensor, i_ber, i_qbits, i_keep_negative)
+    )
+    i_tensor = tf.cast(i_tensor, og_dtype)
+    i_tensor = i_tensor * (2**-i_scaling_exp)
+
+    return i_tensor
+
+def full_tensor_quantize_and_bit_flip_deterministic_v3(i_tensor, i_scaling_exp, i_flbirs, i_qbits, i_keep_negative=0):
+    og_dtype = i_tensor.dtype
+    i_tensor = i_tensor * (2**i_scaling_exp)
+    i_tensor = tf.cast(i_tensor, tf.int64)
+    i_tensor = tf.bitwise.bitwise_xor(
+        i_tensor, gen_mask_tensor_deterministic_v3(i_tensor, i_flbirs, i_qbits, i_keep_negative)
+    )
+    i_tensor = tf.cast(i_tensor, og_dtype)
+    i_tensor = i_tensor * (2**-i_scaling_exp)
+
+    return i_tensor
+
 def full_tensor_quantize_and_bit_flip(i_tensor, i_scaling_exp, i_ber, i_qbits):
     og_dtype = i_tensor.dtype
     i_tensor = i_tensor * (2**i_scaling_exp)
@@ -184,6 +273,72 @@ def full_tensor_quantize_and_bit_flip(i_tensor, i_scaling_exp, i_ber, i_qbits):
 
     return i_tensor
 
+def quantize_and_bitflip_deterministic(i_values, i_quantizer, regions, bers, i_keep_negative=0):
+    """
+    i_values:    a float matrix of non-quantized model parameters
+    i_quantizer: qkeras quantizer
+    """
+
+    # S: Get quantization configuration
+    quant_config = i_quantizer.get_config()
+    scaling_exponent = quant_config["bits"] - quant_config["integer"] - i_keep_negative
+
+    # S: Get quantized values (represented as floats)
+    result = i_quantizer(i_values)
+
+    # result = result * (2**scaling_exponent)
+    new_result = full_tensor_quantize_and_bit_flip_deterministic(
+        result, scaling_exponent, bers[0], quant_config["bits"]
+    )
+    result = new_result
+    # Convert back to float
+    # result = result * (2**-scaling_exponent)
+
+    return result
+
+def quantize_and_bitflip_deterministic_v2(i_values, i_quantizer, regions, bers, i_keep_negative=0):
+    """
+    i_values:    a float matrix of non-quantized model parameters
+    i_quantizer: qkeras quantizer
+    """
+
+    # S: Get quantization configuration
+    quant_config = i_quantizer.get_config()
+    scaling_exponent = quant_config["bits"] - quant_config["integer"] - i_keep_negative
+
+    # S: Get quantized values (represented as floats)
+    result = i_quantizer(i_values)
+
+    # result = result * (2**scaling_exponent)
+    new_result = full_tensor_quantize_and_bit_flip_deterministic_v2(
+        result, scaling_exponent, bers[0], quant_config["bits"], i_keep_negative
+    )
+    result = new_result
+    # Convert back to float
+    # result = result * (2**-scaling_exponent)
+
+    return result
+
+
+def quantize_and_bitflip_deterministic_v3(i_values, i_quantizer, regions, bers):
+    """
+    i_values:    a float matrix of non-quantized model parameters
+    i_quantizer: qkeras quantizer
+    """
+
+    # S: Get quantization configuration
+    quant_config = i_quantizer.get_config()
+    scaling_exponent = quant_config["bits"] - quant_config["integer"] - quant_config["keep_negative"]
+
+    # S: Get quantized values (represented as floats)
+    result = i_quantizer(i_values)
+
+    new_result = full_tensor_quantize_and_bit_flip_deterministic_v3(
+        result, scaling_exponent, regions, quant_config["bits"], quant_config["keep_negative"]
+    )
+    result = new_result
+
+    return result
 
 def quantize_and_bitflip(i_values, i_quantizer, regions, bers):
     """
@@ -198,12 +353,12 @@ def quantize_and_bitflip(i_values, i_quantizer, regions, bers):
     # S: Get quantized values (represented as floats)
     result = i_quantizer(i_values)
 
-    result = result * (2**scaling_exponent)
+    # result = result * (2**scaling_exponent)
     new_result = full_tensor_quantize_and_bit_flip(
         result, scaling_exponent, bers[0], quant_config["bits"]
     )
     result = new_result
     # Convert back to float
-    result = result * (2**-scaling_exponent)
+    # result = result * (2**-scaling_exponent)
 
     return result

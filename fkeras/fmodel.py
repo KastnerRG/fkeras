@@ -2,6 +2,7 @@ import random
 import numpy as np
 import tensorflow.compat.v2 as tf
 from collections import OrderedDict, defaultdict
+import fkeras as fk
 
 
 SUPPORTED_LAYERS = ["FQDense", "FQConv2D"]  # TODO: Get list from fkeras itself?
@@ -17,7 +18,7 @@ class FModel:
         self.model_param_ber = model_param_ber
         self._set_layer_bit_ranges()
         self._set_model_param_ber()
-        self.layer_bit_ranges = {}
+        # self.layer_bit_ranges = {}
         # self.num_model_param_bits = 0
         # TODO: Set layer_bit_ranges and num_model_param_bits
 
@@ -84,10 +85,17 @@ class FModel:
         )
         # bits_to_flip = random.sample(list(range(self.num_model_param_bits)), num_faults)
         bits_to_flip.sort()
+        # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] {bits_to_flip}")
         for bit in bits_to_flip:
+            # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] {bit}")
+            # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] self.layer_bit_ranges = {self.layer_bit_ranges}")
             for r in self.layer_bit_ranges.keys():
+                # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] {bit} {r}")
                 if bit >= r[0] and bit < r[1]:  # If bit within range
+                    layer = self.layer_bit_ranges[r]
                     bits_to_flip_per_layer[layer.name] += 1
+                    # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] bits_to_flip_per_layer = {bits_to_flip_per_layer[layer.name]}")
+                    layer.flbrs = [ fk.utils.FaultyLayerBitRegion(bit-r[0], bit-r[0], 1.0) ]
 
         for layer in self.model.layers:
             if layer.__class__.__name__ in SUPPORTED_LAYERS:

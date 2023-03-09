@@ -24,6 +24,7 @@ class FQDense(QDense):
         self.ber = ber
         self.units = units
         self.bit_loc = bit_loc
+        self.flbrs = list()
 
         super(FQDense, self).__init__(units=units, **kwargs)
 
@@ -55,10 +56,10 @@ class FQDense(QDense):
             quant_config["bits"],
             self.ber,
         )[0]
-        faulty_qkernel = quantize_and_bitflip(
+        faulty_qkernel = fk.utils.quantize_and_bitflip_deterministic_v3(
             self.kernel,
             self.kernel_quantizer_internal,
-            [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
+            self.flbrs, #[(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
             [faulty_layer_bit_region.ber],
         )
 
