@@ -19,7 +19,9 @@ class FQConv2D(QConv2D):
     parameters.
     """
 
-    def __init__(self, filters, kernel_size, ber=0.0, bit_loc=0, accum_faults=False, **kwargs):
+    def __init__(
+        self, filters, kernel_size, ber=0.0, bit_loc=0, accum_faults=False, **kwargs
+    ):
         self.ber = ber
         self.bit_loc = bit_loc
         self.filters = filters
@@ -27,12 +29,10 @@ class FQConv2D(QConv2D):
         self.accum_faults = accum_faults
 
         self.flbrs = list()
-         
 
         super(FQConv2D, self).__init__(
             filters=filters, kernel_size=kernel_size, **kwargs
         )
-
 
         self.og_kernel = None
 
@@ -72,10 +72,10 @@ class FQConv2D(QConv2D):
         faulty_qkernel = fk.utils.quantize_and_bitflip_deterministic_v3(
             self.kernel if self.accum_faults else self.og_kernel,
             self.kernel_quantizer_internal,
-            self.flbrs, #[(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
+            self.flbrs,  # [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
             [faulty_layer_bit_region.ber],
         )
-        
+
         self.kernel.assign(faulty_qkernel)
 
         # Useful for debugging purposes
@@ -96,7 +96,7 @@ class FQConv2D(QConv2D):
 
         outputs = tf.keras.backend.conv2d(
             inputs,
-            self.kernel, #faulty_qkernel,
+            self.kernel,  # faulty_qkernel,
             strides=self.strides,
             padding=self.padding,
             data_format=self.data_format,

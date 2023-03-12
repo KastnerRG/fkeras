@@ -64,8 +64,9 @@ class HessianMetrics:
         # Compute the Hessian vector product
         return outer_tape.gradient(grads, params, output_gradients=v)
 
-
-    def hessian_vector_product_hack_reusable_values(self, super_layer_idx=None, layer_idx=None):
+    def hessian_vector_product_hack_reusable_values(
+        self, super_layer_idx=None, layer_idx=None
+    ):
         """
         Compute the Hessian vector product of Hv, where
         H is the Hessian of the loss function with respect to the model parameters
@@ -75,19 +76,19 @@ class HessianMetrics:
         """
         # Compute the gradients of the loss function with respect to the model parameters
 
-
         with tf.GradientTape() as inner_tape:
             loss = self.loss_fn(self.model(self.x), self.y)
 
             params = (
                 self.model.trainable_variables
                 if layer_idx is None
-                else self.model.layers[super_layer_idx].layers[layer_idx].trainable_variables
+                else self.model.layers[super_layer_idx]
+                .layers[layer_idx]
+                .trainable_variables
             )
             grads = inner_tape.gradient(loss, params)
-            
+
         return (params, grads)
-    
 
     def hessian_vector_product_hack(self, v, super_layer_idx=None, layer_idx=None):
         """
@@ -107,16 +108,15 @@ class HessianMetrics:
             params = (
                 self.model.trainable_variables
                 if layer_idx is None
-                else self.model.layers[super_layer_idx].layers[layer_idx].trainable_variables
+                else self.model.layers[super_layer_idx]
+                .layers[layer_idx]
+                .trainable_variables
             )
             grads = inner_tape.gradient(loss, params)
         # Compute the Hessian vector product
         # tf.print(f"\n\n##{params}\n\n Grads:{grads}##\n\n")
         # tf.print(f"\n\n##{params.shape}\n{grads.shape}##\n\n")
         return outer_tape.gradient(grads, params, output_gradients=v)
-    
-
-
 
     def trace(self, max_iter=100, tolerance=1e-3):
         """
@@ -154,7 +154,7 @@ class HessianMetrics:
                 else:
                     trace = np.mean(trace_vhv)
         return layer_traces
-    
+
     def trace_hack(self, max_iter=100, tolerance=1e-3):
         """
         Compute the trace of the Hessian using Hutchinson's method
@@ -165,7 +165,7 @@ class HessianMetrics:
         for sl_i in self.layer_indices:
             super_layer = self.model.layers[sl_i]
             # tf.print(f"\n\n#########HessianDebug{self.get_layers_with_trainable_params(super_layer)}#########\n\n")
-            
+
             for l_i in self.get_layers_with_trainable_params(super_layer):
                 layer_name = self.model.layers[sl_i].layers[l_i].name
                 # print(f"Computing trace for layer {layer_name}")
@@ -175,9 +175,14 @@ class HessianMetrics:
                 for i in range(max_iter):
                     v = [
                         np.random.uniform(
-                            size=self.model.layers[sl_i].layers[l_i].trainable_variables[i].shape
+                            size=self.model.layers[sl_i]
+                            .layers[l_i]
+                            .trainable_variables[i]
+                            .shape
                         )
-                        for i in range(len(self.model.layers[sl_i].layers[l_i].trainable_variables))
+                        for i in range(
+                            len(self.model.layers[sl_i].layers[l_i].trainable_variables)
+                        )
                     ]
                     # Generate Rademacher random variables
                     for vi in v:
@@ -185,12 +190,19 @@ class HessianMetrics:
                         vi[vi >= 0.5] = 1
                     v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
                     # Compute the Hessian vector product
-                    hv = self.hessian_vector_product_hack(v, super_layer_idx=sl_i, layer_idx=l_i)
+                    hv = self.hessian_vector_product_hack(
+                        v, super_layer_idx=sl_i, layer_idx=l_i
+                    )
                     # Compute the trace
                     trace_vhv.append(
-                        tf.reduce_sum([tf.reduce_sum(vi * hvi) for (vi, hvi) in zip(v, hv)])
+                        tf.reduce_sum(
+                            [tf.reduce_sum(vi * hvi) for (vi, hvi) in zip(v, hv)]
+                        )
                     )
-                    if abs(np.mean(trace_vhv) - trace) / (abs(trace) + 1e-6) < tolerance:
+                    if (
+                        abs(np.mean(trace_vhv) - trace) / (abs(trace) + 1e-6)
+                        < tolerance
+                    ):
                         layer_traces[layer_name] = np.mean(trace_vhv)
                     else:
                         trace = np.mean(trace_vhv)

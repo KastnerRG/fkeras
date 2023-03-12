@@ -95,7 +95,9 @@ class FModel:
                     layer = self.layer_bit_ranges[r]
                     bits_to_flip_per_layer[layer.name] += 1
                     # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] bits_to_flip_per_layer = {bits_to_flip_per_layer[layer.name]}")
-                    layer.flbrs = [ fk.utils.FaultyLayerBitRegion(bit-r[0], bit-r[0], 1.0) ]
+                    layer.flbrs = [
+                        fk.utils.FaultyLayerBitRegion(bit - r[0], bit - r[0], 1.0)
+                    ]
 
         for layer in self.model.layers:
             if layer.__class__.__name__ in SUPPORTED_LAYERS:
