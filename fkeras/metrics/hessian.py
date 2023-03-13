@@ -192,6 +192,7 @@ class HessianMetrics:
                     )
                     if abs(np.mean(trace_vhv) - trace) / (abs(trace) + 1e-6) < tolerance:
                         layer_traces[layer_name] = np.mean(trace_vhv)
+                        break
                     else:
                         trace = np.mean(trace_vhv)
         return layer_traces
