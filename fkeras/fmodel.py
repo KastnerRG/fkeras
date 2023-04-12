@@ -113,9 +113,7 @@ class FModel:
         to carry out the specified model BER randomly.
 
         If you want to run multiple trials of the same model BER, call this
-        function for each trial. TODO: In future, use LBI regions to specify
-        start and end LBI indices so that this function can be called
-        'random_select_param_bitflip()' or something.
+        function for each trial.
 
         The number of faults to be injected into the model's parameters = ber *
         num_model_param_bits.
@@ -129,6 +127,9 @@ class FModel:
             for r in self.layer_bit_ranges.keys():
                 if bit >= r[0] and bit < r[1]:  # If bit within range
                     bits_to_flip_per_layer[layer.name] += 1
+                    layer.flbrs = [
+                        fk.utils.FaultyLayerBitRegion(bit - r[0], bit - r[0], 1.0)
+                    ]
 
         for layer in self.model.layers:
             if layer.__class__.__name__ in SUPPORTED_LAYERS:
