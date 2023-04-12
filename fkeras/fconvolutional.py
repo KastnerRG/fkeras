@@ -55,7 +55,6 @@ class FQConv2D(QConv2D):
         return config
 
     def call(self, inputs):
-
         if not self.accum_faults and (self.og_kernel is None):
             self.og_kernel = self.kernel
 
