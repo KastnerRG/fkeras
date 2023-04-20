@@ -282,3 +282,42 @@ class HessianMetrics:
                 layer_eigenvalues[layer_name] = eigenvalues
                 layer_eigenvectors[layer_name] = eigenvectors
         return layer_eigenvalues, layer_eigenvectors
+
+    def sensitivity_ranking(self, layer_eigenvectors, k=1):
+        """
+        Use the top eigenvalues and eigenvectors of the hessian to rank the
+        parameters based on sensitivity to bit flips. To do so, we:
+            1. Retrieve the top eigenvalues and eigenvectors of the Hessian
+            2. Compute sensitivity ranking by taking the inner product of the
+               top k eigenvectors with the parameters and then we are left with
+               k scalars which we can use to rank the parameters. In this sense,
+               the parameters that get scaled the most by the k-th eigenvector
+               are associated with rank k. Ex: paraemeters X, Y, and Z are
+               scaled the most by the top 1 eigenvector, so those parameters
+               are ranked the top 1 most sensitive to bit flips.
+        NOTE: We can try different combinations of how to balance the
+        "eigenvalue ranking" and the "importance-in-each-eigenvector" scores and
+        give a design. Here we are restricted to just one dimension of the
+        eigenvector, so there is some freedom to design it.
+        """
+        # Compute sensitivity ranking
+        sensitivity_ranking = {}
+        for sl_i in self.layer_indices:
+            super_layer = self.model.layers[sl_i]
+            # tf.print(f"\n\n#########HessianDebug{self.get_layers_with_trainable_params(super_layer)}#########\n\n")
+            for l_i in self.get_layers_with_trainable_params(super_layer):
+                layer_name = self.model.layers[sl_i].layers[l_i].name
+                print(f"Ranking by sensitivity for layer {layer_name}")
+                # Get eigenvector for weights only (ignore biases)
+                curr_eigenvector = layer_eigenvectors[layer_name][0]
+                # TODO: Compute dot product of eigenvector with this layer's params to get overall ranking and then sort params based on eigenvector values to get ranking within the overall ranking
+
+        # for layer_name, eigenvectors in layer_eigenvectors.items():
+        #     sensitivity_ranking[layer_name] = {}
+        #     for i, eigenvector in enumerate(eigenvectors):
+        #         sensitivity_ranking[layer_name][i] = {}
+        #         for j, param in enumerate(self.model.trainable_variables):
+        #             sensitivity_ranking[layer_name][i][param.name] = tf.reduce_sum(
+        #                 [tf.reduce_sum(vi * e) for (vi, e) in zip(param, eigenvector)]
+        #             )
+        return sensitivity_ranking
