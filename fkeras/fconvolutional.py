@@ -34,7 +34,14 @@ class FQConv2D(QConv2D):
             filters=filters, kernel_size=kernel_size, **kwargs
         )
 
-        self.og_kernel = None
+        # self.og_kernel = tf.Variable(
+        #     initial_value=tf.zeros((3, 3, 1, 8), dtype=tf.dtypes.float32, name=None),
+        #     trainable=None,
+        #     name="og_kernel",
+        #     dtype=tf.dtypes.float32,
+        #     shape=(3, 3, 1, 8)
+        # )
+
 
     def set_ber(self, ber):
         self.ber = ber
@@ -55,8 +62,13 @@ class FQConv2D(QConv2D):
         return config
 
     def call(self, inputs):
-        if not self.accum_faults and (self.og_kernel is None):
-            self.og_kernel = self.kernel
+        # tf.print(f"Top of the Call function to ya")
+        # tf.print(f"Keeping track of OG: {self.og_kernel} | {type(self.og_kernel)}")
+        # tf.print(f"Branch Condition: {not self.accum_faults and (self.og_kernel is None)} | {not self.accum_faults} | {(self.og_kernel is None)}")
+        # if not self.accum_faults and (self.og_kernel is None):
+        #     self.og_kernel.assign(self.kernel.read_value())
+        #     tf.print(f"Keeping track of OG: {self.og_kernel}")
+
 
         if self.ber == 0:  # For speed
             return super().call(inputs)
@@ -69,7 +81,7 @@ class FQConv2D(QConv2D):
         )[0]
 
         faulty_qkernel = fk.utils.quantize_and_bitflip_deterministic_v3(
-            self.kernel if self.accum_faults else self.og_kernel,
+            self.kernel, #if self.accum_faults else self.og_kernel,
             self.kernel_quantizer_internal,
             self.flbrs,  # [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
             [faulty_layer_bit_region.ber],

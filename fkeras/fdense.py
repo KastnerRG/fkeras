@@ -29,7 +29,7 @@ class FQDense(QDense):
 
         super(FQDense, self).__init__(units=units, **kwargs)
 
-        self.og_kernel = None
+        # self.og_kernel = None
 
     def set_ber(self, ber):
         self.ber = ber
@@ -49,9 +49,9 @@ class FQDense(QDense):
         return config
 
     def call(self, inputs):
-        if not self.accum_faults and (self.og_kernel is None):
-            self.og_kernel = self.kernel
-
+        # if not self.accum_faults and (self.og_kernel is None):
+        #     self.og_kernel = self.kernel
+        
         if self.ber == 0:  # For speed
             return super().call(inputs)
         # TODO: Update the following code block with function call that
@@ -63,7 +63,7 @@ class FQDense(QDense):
             self.ber,
         )[0]
         faulty_qkernel = fk.utils.quantize_and_bitflip_deterministic_v3(
-            self.kernel if self.accum_faults else self.og_kernel,
+            self.kernel,# if self.accum_faults else self.og_kernel,
             self.kernel_quantizer_internal,
             self.flbrs,  # [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
             [faulty_layer_bit_region.ber],

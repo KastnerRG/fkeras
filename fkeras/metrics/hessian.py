@@ -203,6 +203,7 @@ class HessianMetrics:
                         < tolerance
                     ):
                         layer_traces[layer_name] = np.mean(trace_vhv)
+                        break
                     else:
                         trace = np.mean(trace_vhv)
         return layer_traces
