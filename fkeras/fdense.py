@@ -65,7 +65,7 @@ class FQDense(QDense):
         faulty_qkernel = fk.utils.quantize_and_bitflip_deterministic_v3(
             self.kernel,# if self.accum_faults else self.og_kernel,
             self.kernel_quantizer_internal,
-            self.flbrs, #[(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
+            self.flbrs,  # [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
             [faulty_layer_bit_region.ber],
         )
 
@@ -79,7 +79,7 @@ class FQDense(QDense):
         # tf.print("Reduced DENSE equality tensor:")
         # tf.print(tf.math.reduce_all(equality_tensor)) # Logical and across all elements of tensor
 
-        output = tf.keras.backend.dot(inputs, self.kernel) #faulty_qkernel)
+        output = tf.keras.backend.dot(inputs, self.kernel)  # faulty_qkernel)
         if self.use_bias:
             if self.bias_quantizer:
                 quantized_bias = self.bias_quantizer_internal(self.bias)
