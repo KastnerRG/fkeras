@@ -42,7 +42,6 @@ class FQConv2D(QConv2D):
         #     shape=(3, 3, 1, 8)
         # )
 
-
     def set_ber(self, ber):
         self.ber = ber
 
@@ -69,7 +68,6 @@ class FQConv2D(QConv2D):
         #     self.og_kernel.assign(self.kernel.read_value())
         #     tf.print(f"Keeping track of OG: {self.og_kernel}")
 
-
         if self.ber == 0:  # For speed
             return super().call(inputs)
 
@@ -81,7 +79,7 @@ class FQConv2D(QConv2D):
         )[0]
 
         faulty_qkernel = fk.utils.quantize_and_bitflip_deterministic_v3(
-            self.kernel, #if self.accum_faults else self.og_kernel,
+            self.kernel,  # if self.accum_faults else self.og_kernel,
             self.kernel_quantizer_internal,
             self.flbrs,  # [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
             [faulty_layer_bit_region.ber],

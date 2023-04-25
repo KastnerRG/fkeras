@@ -282,7 +282,7 @@ class HessianMetrics:
                     eigenvectors.append(v)
                 layer_eigenvalues[layer_name] = eigenvalues
                 layer_eigenvectors[layer_name] = eigenvectors
-            break # Compute for encoder only
+            break  # Compute for encoder only
         return layer_eigenvalues, layer_eigenvectors
 
     def sensitivity_ranking(self, layer_eigenvectors, k=1):
@@ -324,7 +324,10 @@ class HessianMetrics:
                 param_ranking = np.flip(np.argsort(np.abs(curr_eigenvector)))
                 param_rank_score = curr_eigenvector[param_ranking]
                 print(f"parameter_ranking: {param_ranking[:10]}")
-                sensitivity_ranking[layer_name] = [(param_ranking[i], param_rank_score[i]) for i in range(len(param_ranking))]
+                sensitivity_ranking[layer_name] = [
+                    (param_ranking[i], param_rank_score[i])
+                    for i in range(len(param_ranking))
+                ]
                 # ranking = tf.reduce_sum(curr_eigenvector * self.model.layers[sl_i].layers[l_i].trainable_variables, axis=1)
                 # print(f"ranking shape: {ranking.shape}")
                 # print(f"ranking: {ranking}")
@@ -332,5 +335,38 @@ class HessianMetrics:
                 # sorted_indices = tf.argsort(ranking, direction="DESCENDING")
                 # print(f"sorted_indices shape: {sorted_indices.shape}")
                 # print(f"sorted_indices: {sorted_indices}")
-            break # Compute for encoder only
+            break  # Compute for encoder only
         return sensitivity_ranking
+
+    def gradient_ranking(self):
+        """
+        Rank parameters based on gradient magnitude
+        """
+        grad_ranking = {}
+        for sl_i in self.layer_indices:
+            super_layer = self.model.layers[sl_i]
+            for l_i in self.get_layers_with_trainable_params(super_layer):
+                layer_name = self.model.layers[sl_i].layers[l_i].name
+                print(f"Gradient ranking by sensitivity for layer {layer_name}")
+                # Compute gradient ranking
+                with tf.GradientTape() as inner_tape:
+                    loss = self.loss_fn(self.model(self.x), self.y)
+                    params = (
+                        self.model.trainable_variables
+                        if l_i is None
+                        else self.model.layers[sl_i].layers[l_i].trainable_variables
+                    )
+                    grads = inner_tape.gradient(loss, params)
+                grads = grads[0].numpy()
+                print(f"grads shape: {grads.shape}")
+                grads = grads.flatten()
+                print(f"flat grads shape: {grads.shape}")
+                param_ranking = np.flip(np.argsort(np.abs(grads)))
+                param_rank_score = grads[param_ranking]
+                print(f"grad parameter_ranking: {param_ranking[:10]}")
+                grad_ranking[layer_name] = [
+                    (param_ranking[i], param_rank_score[i])
+                    for i in range(len(param_ranking))
+                ]
+            break  # Compute for encoder only
+        return grad_ranking
