@@ -282,6 +282,7 @@ class HessianMetrics:
                     eigenvectors.append(v)
                 layer_eigenvalues[layer_name] = eigenvalues
                 layer_eigenvectors[layer_name] = eigenvectors
+            break # Compute for encoder only
         return layer_eigenvalues, layer_eigenvectors
 
     def sensitivity_ranking(self, layer_eigenvectors, k=1):
@@ -302,23 +303,34 @@ class HessianMetrics:
         eigenvector, so there is some freedom to design it.
         """
         # Compute sensitivity ranking
+        # TODO: Provide bit-level ranking based on qkeras layer quantizer info
         sensitivity_ranking = {}
         for sl_i in self.layer_indices:
             super_layer = self.model.layers[sl_i]
-            # tf.print(f"\n\n#########HessianDebug{self.get_layers_with_trainable_params(super_layer)}#########\n\n")
             for l_i in self.get_layers_with_trainable_params(super_layer):
                 layer_name = self.model.layers[sl_i].layers[l_i].name
                 print(f"Ranking by sensitivity for layer {layer_name}")
+                # NOTE: Just using the top 1 eigenvector for now
                 # Get eigenvector for weights only (ignore biases)
-                curr_eigenvector = layer_eigenvectors[layer_name][0]
+                curr_eigenvector = layer_eigenvectors[layer_name][0][0]
                 # TODO: Compute dot product of eigenvector with this layer's params to get overall ranking and then sort params based on eigenvector values to get ranking within the overall ranking
-
-        # for layer_name, eigenvectors in layer_eigenvectors.items():
-        #     sensitivity_ranking[layer_name] = {}
-        #     for i, eigenvector in enumerate(eigenvectors):
-        #         sensitivity_ranking[layer_name][i] = {}
-        #         for j, param in enumerate(self.model.trainable_variables):
-        #             sensitivity_ranking[layer_name][i][param.name] = tf.reduce_sum(
-        #                 [tf.reduce_sum(vi * e) for (vi, e) in zip(param, eigenvector)]
-        #             )
+                # print(f"parameters: {self.model.layers[sl_i].layers[l_i].trainable_variables[0]}")
+                # Operate on numpy arrays now
+                curr_eigenvector = curr_eigenvector.numpy()
+                print(f"eigenvector shape: {curr_eigenvector.shape}")
+                curr_eigenvector = curr_eigenvector.flatten()
+                # curr_eigenvector = tf.reshape(curr_eigenvector, [-1]) # Flatten
+                print(f"flat eigenvector shape: {curr_eigenvector.shape}")
+                param_ranking = np.flip(np.argsort(np.abs(curr_eigenvector)))
+                param_rank_score = curr_eigenvector[param_ranking]
+                print(f"parameter_ranking: {param_ranking[:10]}")
+                sensitivity_ranking[layer_name] = [(param_ranking[i], param_rank_score[i]) for i in range(len(param_ranking))]
+                # ranking = tf.reduce_sum(curr_eigenvector * self.model.layers[sl_i].layers[l_i].trainable_variables, axis=1)
+                # print(f"ranking shape: {ranking.shape}")
+                # print(f"ranking: {ranking}")
+                # Sort parameters based on eigenvector values
+                # sorted_indices = tf.argsort(ranking, direction="DESCENDING")
+                # print(f"sorted_indices shape: {sorted_indices.shape}")
+                # print(f"sorted_indices: {sorted_indices}")
+            break # Compute for encoder only
         return sensitivity_ranking
