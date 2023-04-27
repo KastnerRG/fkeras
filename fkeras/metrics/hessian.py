@@ -310,31 +310,32 @@ class HessianMetrics:
             for l_i in self.get_layers_with_trainable_params(super_layer):
                 layer_name = self.model.layers[sl_i].layers[l_i].name
                 print(f"Ranking by sensitivity for layer {layer_name}")
-                # NOTE: Just using the top 1 eigenvector for now
-                # Get eigenvector for weights only (ignore biases)
-                curr_eigenvector = layer_eigenvectors[layer_name][0][0]
-                # TODO: Compute dot product of eigenvector with this layer's params to get overall ranking and then sort params based on eigenvector values to get ranking within the overall ranking
-                # print(f"parameters: {self.model.layers[sl_i].layers[l_i].trainable_variables[0]}")
-                # Operate on numpy arrays now
-                curr_eigenvector = curr_eigenvector.numpy()
-                print(f"eigenvector shape: {curr_eigenvector.shape}")
-                curr_eigenvector = curr_eigenvector.flatten()
-                # curr_eigenvector = tf.reshape(curr_eigenvector, [-1]) # Flatten
-                print(f"flat eigenvector shape: {curr_eigenvector.shape}")
-                param_ranking = np.flip(np.argsort(np.abs(curr_eigenvector)))
-                param_rank_score = curr_eigenvector[param_ranking]
+                # Compute ranking for kth eigenvector
+                combined_eigenvector_score = np.zeros(
+                    layer_eigenvectors[layer_name][0][0].numpy().size
+                )
+                for i in range(k):
+                    # Get eigenvector for weights only (ignore biases)
+                    curr_eigenvector = layer_eigenvectors[layer_name][i][0]
+                    curr_eigenvector = curr_eigenvector.numpy()
+                    curr_eigenvector = curr_eigenvector.flatten()
+                    params = (
+                        self.model.layers[sl_i]
+                        .layers[l_i]
+                        .trainable_variables[0]
+                        .numpy()
+                    )
+                    params = params.flatten()
+                    # Compute dot product of eigenvector with this layer's params to get overall ranking and then sort params based on eigenvector values to get ranking within the overall ranking
+                    scalar_rank = np.dot(curr_eigenvector, params)
+                    combined_eigenvector_score += np.abs(scalar_rank * curr_eigenvector)
+                param_ranking = np.flip(np.argsort(np.abs(combined_eigenvector_score)))
+                param_rank_score = combined_eigenvector_score[param_ranking]
                 print(f"parameter_ranking: {param_ranking[:10]}")
                 sensitivity_ranking[layer_name] = [
                     (param_ranking[i], param_rank_score[i])
                     for i in range(len(param_ranking))
                 ]
-                # ranking = tf.reduce_sum(curr_eigenvector * self.model.layers[sl_i].layers[l_i].trainable_variables, axis=1)
-                # print(f"ranking shape: {ranking.shape}")
-                # print(f"ranking: {ranking}")
-                # Sort parameters based on eigenvector values
-                # sorted_indices = tf.argsort(ranking, direction="DESCENDING")
-                # print(f"sorted_indices shape: {sorted_indices.shape}")
-                # print(f"sorted_indices: {sorted_indices}")
             break  # Compute for encoder only
         return sensitivity_ranking
 
@@ -343,6 +344,7 @@ class HessianMetrics:
         Rank parameters based on gradient magnitude
         """
         grad_ranking = {}
+        grad_dict = {}
         for sl_i in self.layer_indices:
             super_layer = self.model.layers[sl_i]
             for l_i in self.get_layers_with_trainable_params(super_layer):
@@ -358,6 +360,7 @@ class HessianMetrics:
                     )
                     grads = inner_tape.gradient(loss, params)
                 grads = grads[0].numpy()
+                grad_dict[layer_name] = grads
                 print(f"grads shape: {grads.shape}")
                 grads = grads.flatten()
                 print(f"flat grads shape: {grads.shape}")
@@ -369,4 +372,4 @@ class HessianMetrics:
                     for i in range(len(param_ranking))
                 ]
             break  # Compute for encoder only
-        return grad_ranking
+        return grad_ranking, grad_dict
