@@ -66,32 +66,6 @@ class HessianMetrics:
         # Compute the Hessian vector product
         return outer_tape.gradient(grads, params, output_gradients=v)
 
-    def hessian_vector_product_hack_reusable_values(
-        self, super_layer_idx=None, layer_idx=None
-    ):
-        """
-        Compute the Hessian vector product of Hv, where
-        H is the Hessian of the loss function with respect to the model parameters
-        v is a vector of the same size as the model parameters
-
-        Based on: https://github.com/tensorflow/tensorflow/blob/47f0e99c1918f68daa84bd4cac1b6011b2942dac/tensorflow/python/eager/benchmarks/resnet50/hvp_test.py#L62
-        """
-        # Compute the gradients of the loss function with respect to the model parameters
-
-        with tf.GradientTape() as inner_tape:
-            loss = self.loss_fn(self.model(self.x), self.y)
-
-            params = (
-                self.model.trainable_variables
-                if layer_idx is None
-                else self.model.layers[super_layer_idx]
-                .layers[layer_idx]
-                .trainable_variables
-            )
-            grads = inner_tape.gradient(loss, params)
-
-        return (params, grads)
-
     def layer_hessian_vector_product_hack(
         self, v, super_layer_idx=None, layer_idx=None
     ):
@@ -122,8 +96,12 @@ class HessianMetrics:
             temp_hv = [
                 THv1 + Hv1 * float(len(batch_x)) for THv1, Hv1 in zip(temp_hv, hv)
             ]
+        temp_hv = [THv1 / float(num_data) for THv1 in temp_hv]
+        eigenvalue = tf.reduce_sum(
+            [tf.reduce_sum(THv1 * v1) for THv1, v1 in zip(temp_hv, v)]
+        )
         # Compute the Hessian vector product
-        return [THv1 / float(num_data) for THv1 in temp_hv]
+        return temp_hv, eigenvalue
 
     def hessian_vector_product_hack(self, v, super_layer_idx=None):
         """
@@ -137,26 +115,29 @@ class HessianMetrics:
         layer_indices = self.get_layers_with_trainable_params(
             self.model.layers[super_layer_idx]
         )
-        with tf.GradientTape() as outer_tape:
-            with tf.GradientTape() as inner_tape:
-                loss = self.loss_fn(self.model(self.x), self.y)
-            # params = self.model.trainable_variables if layer_idx is None else self.model.layers[layer_idx].trainable_variables
-            # tf.print(f"\n\n##{self.model.trainable_variables}##\n\n")
-            # Collect parameters from layer indices and flatten into a single array
-            # Weights only
-            params = [
-                self.model.layers[super_layer_idx].layers[i].trainable_variables[0]
-                for i in layer_indices
+        params = [
+            v
+            for i in layer_indices
+            for v in self.model.layers[super_layer_idx].layers[i].trainable_variables
+        ]
+        num_data = 0
+        temp_hv = [tf.zeros_like(p) for p in params]
+        for batch_x, batch_y in zip(self.batched_x, self.batched_y):
+            with tf.GradientTape() as outer_tape:
+                with tf.GradientTape() as inner_tape:
+                    loss = self.loss_fn(self.model(batch_x), batch_y)
+                    grads = inner_tape.gradient(loss, params)
+                hv = outer_tape.gradient(grads, params, output_gradients=v)
+            num_data += len(batch_x)
+            temp_hv = [
+                THv1 + Hv1 * float(len(batch_x)) for THv1, Hv1 in zip(temp_hv, hv)
             ]
-            # for p in params:
-            # tf.print(f"\n\n##{p.shape}##\n\n")
-            # params = [tf.reshape(p, tf.size(p)) for p in params] # Flatten
-            # params = tf.concat(params, axis=0)
-            grads = inner_tape.gradient(loss, params)
+        temp_hv = [THv1 / float(num_data) for THv1 in temp_hv]
+        eigenvalue = tf.reduce_sum(
+            [tf.reduce_sum(THv1 * v1) for THv1, v1 in zip(temp_hv, v)]
+        )
         # Compute the Hessian vector product
-        # tf.print(f"\n\n##{params}\n\n Grads:{grads}##\n\n")
-        # tf.print(f"\n\n##{params.shape}\n{grads.shape}##\n\n")
-        return outer_tape.gradient(grads, params, output_gradients=v)
+        return temp_hv, eigenvalue
 
     def trace(self, max_iter=100, tolerance=1e-3):
         """
@@ -201,53 +182,52 @@ class HessianMetrics:
         max_iter: maximimum number of iterations used to compute trace
         tolerance: tolerance for convergence
         """
-        layer_traces = {}
+        trace = 0.0
+        trace_vhv = []
+        layer_trace_vhv = []
         for sl_i in self.layer_indices:
             super_layer = self.model.layers[sl_i]
+            layer_indices = self.get_layers_with_trainable_params(super_layer)
             # tf.print(f"\n\n#########HessianDebug{self.get_layers_with_trainable_params(super_layer)}#########\n\n")
+            params = [
+                v
+                for i in layer_indices
+                for v in self.model.layers[sl_i].layers[i].trainable_variables
+            ]
+            # for i in range(max_iter):
+            while True:
+                v = [np.random.uniform(size=p.shape) for p in params]
+                # Generate Rademacher random variables
+                for vi in v:
+                    vi[vi < 0.5] = -1
+                    vi[vi >= 0.5] = 1
+                v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
+                # Compute the Hessian vector product
+                hv, _ = self.hessian_vector_product_hack(v, super_layer_idx=sl_i)
+                # Compute the trace
+                curr_trace_vhv = [tf.reduce_sum(vi * hvi) for (vi, hvi) in zip(v, hv)]
+                layer_trace_vhv.append(curr_trace_vhv)
+                trace_vhv.append(tf.reduce_sum(curr_trace_vhv))
+                if abs(np.mean(trace_vhv) - trace) / (abs(trace) + 1e-6) < tolerance:
+                    break
+                else:
+                    trace = np.mean(trace_vhv)
+            break  # Compute for encoder only
+        # TODO: Create a dictionary of layer names and their traces
+        # trace_dict = {}
+        # for i, l_i in enumerate(layer_indices):
+        # TODO: Take dot product of weights and biases for a layer across all
+        # iterations and take the mean
+        #     layer_name = self.model.layers[sl_i].layers[l_i].name
+        #     trace_dict[layer_name] = np.mean(layer_trace_vhv, axis=0)[i]
+        return np.mean(trace_vhv)
 
-            for l_i in self.get_layers_with_trainable_params(super_layer):
-                layer_name = self.model.layers[sl_i].layers[l_i].name
-                # print(f"Computing trace for layer {layer_name}")
-                trace_vhv = []
-                trace = 0.0
-
-                for i in range(max_iter):
-                    v = [
-                        np.random.uniform(
-                            size=self.model.layers[sl_i]
-                            .layers[l_i]
-                            .trainable_variables[i]
-                            .shape
-                        )
-                        for i in range(
-                            len(self.model.layers[sl_i].layers[l_i].trainable_variables)
-                        )
-                    ]
-                    # Generate Rademacher random variables
-                    for vi in v:
-                        vi[vi < 0.5] = -1
-                        vi[vi >= 0.5] = 1
-                    v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
-                    # Compute the Hessian vector product
-                    hv = self.layer_hessian_vector_product_hack(
-                        v, super_layer_idx=sl_i, layer_idx=l_i
-                    )
-                    # Compute the trace
-                    trace_vhv.append(
-                        tf.reduce_sum(
-                            [tf.reduce_sum(vi * hvi) for (vi, hvi) in zip(v, hv)]
-                        )
-                    )
-                    if (
-                        abs(np.mean(trace_vhv) - trace) / (abs(trace) + 1e-6)
-                        < tolerance
-                    ):
-                        layer_traces[layer_name] = np.mean(trace_vhv)
-                        break
-                    else:
-                        trace = np.mean(trace_vhv)
-        return layer_traces
+    def normalize_vector_list(self, v_list):
+        """
+        Normalize a list of vectors
+        """
+        s = tf.reduce_sum([tf.reduce_sum(v * v) for v in v_list])
+        return [v / tf.sqrt(s) for v in v_list]
 
     def layer_top_k_eigenvalues_hack(self, k=1, max_iter=100, tolerance=1e-3):
         """
@@ -280,10 +260,10 @@ class HessianMetrics:
                         for i in range(
                             len(self.model.layers[sl_i].layers[l_i].trainable_variables)
                         )
-                    ]
+                    ]  # TODO: Change this to iterate across all layers
                     v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
                     # Normalize the eigenvector
-                    v = [vi / tf.norm(vi) for vi in v]
+                    v = self.normalize_vector_list(v)
                     for j in range(max_iter):
                         eigenvalue = None
                         # Make v orthonormal to eigenvectors
@@ -291,18 +271,13 @@ class HessianMetrics:
                             v = [
                                 vi - tf.reduce_sum(vi * e) * e for (vi, e) in zip(v, ei)
                             ]
-                        # Normalize the eigenvector
-                        v = [vi / tf.norm(vi) for vi in v]
+                        v = self.normalize_vector_list(v)
                         # Compute the Hessian vector product
-                        hv = self.layer_hessian_vector_product_hack(
+                        hv, tmp_eigenvalue = self.layer_hessian_vector_product_hack(
                             v, super_layer_idx=sl_i, layer_idx=l_i
                         )
-                        # Compute the eigenvalue
-                        tmp_eigenvalue = tf.reduce_sum(
-                            [tf.reduce_sum(vi * hvi) for (vi, hvi) in zip(v, hv)]
-                        )
                         # Normalize the eigenvector
-                        v = [hvi / tf.norm(hvi) for hvi in hv]
+                        v = self.normalize_vector_list(hv)
                         if eigenvalue is None:
                             eigenvalue = tmp_eigenvalue
                         else:
@@ -329,43 +304,35 @@ class HessianMetrics:
         max_iter: maximum number of iterations used to compute eigenvalues
         tolerance: tolerance for convergence
         """
+        eigenvalues = []
+        eigenvectors = []
         for sl_i in self.layer_indices:
-            super_layer = self.model.layers[sl_i]
             layer_indices = self.get_layers_with_trainable_params(
                 self.model.layers[sl_i]
             )
             params = [
-                self.model.layers[sl_i].layers[i].trainable_variables[0]
+                v
                 for i in layer_indices
+                for v in self.model.layers[sl_i].layers[i].trainable_variables
             ]
-            params = [tf.reshape(p, tf.size(p)) for p in params]  # Flatten parameters
-            params = tf.concat(params, axis=0)
-            # tf.print(f"\n\n#########HessianDebug{self.get_layers_with_trainable_params(super_layer)}#########\n\n")
-            print(f"Computing top {k} eigenvalues for super layer {super_layer.name}")
-            eigenvalues = []
-            eigenvectors = []
             for i in range(k):
                 # Initialize the eigenvector
                 v = [np.random.uniform(size=p.shape) for p in params]
                 v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
                 # Normalize the eigenvector
-                v = [vi / tf.norm(vi) for vi in v]
+                v = self.normalize_vector_list(v)
                 for j in range(max_iter):
                     eigenvalue = None
                     # Make v orthonormal to eigenvectors
                     for ei in eigenvectors:
                         v = [vi - tf.reduce_sum(vi * e) * e for (vi, e) in zip(v, ei)]
-                    # Normalize the eigenvector
-                    v = [vi / tf.norm(vi) for vi in v]
+                    v = self.normalize_vector_list(v)
                     # Compute the Hessian vector product
-                    hv = self.hessian_vector_product_hack(v, super_layer_idx=sl_i)
-                    # TODO: flatten vector here??
-                    # Compute the eigenvalue
-                    tmp_eigenvalue = tf.reduce_sum(
-                        [tf.reduce_sum(vi * hvi) for (vi, hvi) in zip(v, hv)]
+                    hv, tmp_eigenvalue = self.hessian_vector_product_hack(
+                        v, super_layer_idx=sl_i
                     )
                     # Normalize the eigenvector
-                    v = [hvi / tf.norm(hvi) for hvi in hv]
+                    v = self.normalize_vector_list(hv)
                     if eigenvalue is None:
                         eigenvalue = tmp_eigenvalue
                     else:
@@ -381,7 +348,7 @@ class HessianMetrics:
             break  # Compute for encoder only
         return eigenvalues, eigenvectors
 
-    def sensitivity_ranking(self, layer_eigenvectors, layer_eigenvalues=None, k=1):
+    def layer_hessian_ranking(self, layer_eigenvectors, layer_eigenvalues=None, k=1):
         """
         Use the top eigenvalues and eigenvectors of the hessian to rank the
         parameters based on sensitivity to bit flips. To do so, we:
@@ -400,6 +367,7 @@ class HessianMetrics:
         """
         # Compute sensitivity ranking
         # TODO: Provide bit-level ranking based on qkeras layer quantizer info
+        # and log2
         sensitivity_ranking = {}
         for sl_i in self.layer_indices:
             super_layer = self.model.layers[sl_i]
@@ -426,7 +394,10 @@ class HessianMetrics:
                         .numpy()
                     )
                     params = params.flatten()
-                    # Compute dot product of eigenvector with this layer's params to get overall ranking and then sort params based on eigenvector values to get ranking within the overall ranking
+                    # Compute dot product of eigenvector with this layer's
+                    # params to get overall ranking and then sort params based
+                    # on eigenvector values to get ranking within the overall
+                    # ranking
                     scalar_rank = np.dot(curr_eigenvector, params)
                     combined_eigenvector_score += np.abs(scalar_rank * curr_eigenvector)
                 param_ranking = np.flip(np.argsort(np.abs(combined_eigenvector_score)))
@@ -439,9 +410,61 @@ class HessianMetrics:
             break  # Compute for encoder only
         return sensitivity_ranking
 
-    def gradient_ranking(self):
+    def do_hessian_rank(self, params, eigenvectors, eigenvalues, k):
         """
-        Rank parameters based on gradient magnitude
+        Given flattened list of parameters, list of eigenvectors, and list of
+        eigenvalues, compute the eigenvector/value scores.
+
+        Combine the weight eigenvectors into a single vector for model-wide
+        parameter sensitivity ranking. Return a list of eigenvector/eigenvalue
+        scores, one score for each parameter.
+        Curren method: weighted sum of eigenvectors
+        """
+        combined_eigenvector_score = np.zeros(params.size)
+        for i in range(k):
+            combined_eigenvector = []
+            for j in range(0, len(eigenvectors[i]), 2):
+                # Go every 2 to ignore biases
+                ev = eigenvectors[i][j].numpy()  # Weight
+                print(f"ev shape: {ev.shape}")
+                combined_eigenvector.extend(ev.flatten())
+            combined_eigenvector = np.array(combined_eigenvector)
+            if eigenvalues:
+                curr_eigenvalue = eigenvalues[i].numpy()
+                print(f"{i}th eigenvalue: {curr_eigenvalue}")
+                combined_eigenvector = combined_eigenvector * curr_eigenvalue
+            scalar_rank = np.dot(combined_eigenvector, params)
+            combined_eigenvector_score += np.abs(scalar_rank * combined_eigenvector)
+        return combined_eigenvector_score
+
+    def hessian_ranking(self, eigenvectors, eigenvalues=None, k=1):
+        """
+        Given list of eigenvectors and eigenvalues, compute the sensitivity.
+        Use Hessian to rank parameters based on sensitivity to bit flips with
+        respect to all parameters (not by layer like layer_hessian_ranking).
+        """
+        # Get all parameters of the model and flatten and concat into one list
+        params = []
+        for sl_i in self.layer_indices:
+            super_layer = self.model.layers[sl_i]
+            for l_i in self.get_layers_with_trainable_params(super_layer):
+                params.append(  # Weights only
+                    self.model.layers[sl_i].layers[l_i].trainable_variables[0].numpy()
+                )
+            break  # Compute for encoder only
+        params = np.concatenate(params, axis=None)
+        params = params.flatten()
+        print(f"params shape: {params.shape}")
+        # Flatten and concatenate all eigenvectors into one list
+        eigenvector_rank = self.do_hessian_rank(params, eigenvectors, eigenvalues, k)
+        param_ranking = np.flip(np.argsort(np.abs(eigenvector_rank)))
+        param_scores = eigenvector_rank[param_ranking]
+        print(f"parameter_ranking: {param_ranking[:10]}")
+        return param_ranking, param_scores
+
+    def layer_gradient_ranking(self):
+        """
+        Rank parameters based on gradient magnitude per layer
         """
         grad_ranking = {}
         grad_dict = {}
