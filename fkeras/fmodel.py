@@ -9,7 +9,13 @@ SUPPORTED_LAYERS = ["FQDense", "FQConv2D"]  # TODO: Get list from fkeras itself?
 # Though not all layers have BERs...
 
 # Layers that have no parameters to bit flip
-NON_PARAM_LAYERS = ["InputLayer", "QActivation", "Flatten"]
+NON_PARAM_LAYERS = [
+    "InputLayer",
+    "QActivation",
+    "Flatten",
+    "BatchNormalization",
+    "Activation",
+]
 
 
 class FModel:

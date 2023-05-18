@@ -42,29 +42,29 @@ class HessianMetrics:
                 layer_indices.append(i)
         return layer_indices
 
-    def hessian_vector_product(self, v, layer_idx=None):
-        """
-        Compute the Hessian vector product of Hv, where
-        H is the Hessian of the loss function with respect to the model parameters
-        v is a vector of the same size as the model parameters
+    # def hessian_vector_product(self, v, layer_idx=None):
+    #     """
+    #     Compute the Hessian vector product of Hv, where
+    #     H is the Hessian of the loss function with respect to the model parameters
+    #     v is a vector of the same size as the model parameters
 
-        Based on: https://github.com/tensorflow/tensorflow/blob/47f0e99c1918f68daa84bd4cac1b6011b2942dac/tensorflow/python/eager/benchmarks/resnet50/hvp_test.py#L62
-        """
-        # Compute the gradients of the loss function with respect to the model parameters
+    #     Based on: https://github.com/tensorflow/tensorflow/blob/47f0e99c1918f68daa84bd4cac1b6011b2942dac/tensorflow/python/eager/benchmarks/resnet50/hvp_test.py#L62
+    #     """
+    #     # Compute the gradients of the loss function with respect to the model parameters
 
-        with tf.GradientTape() as outer_tape:
-            with tf.GradientTape() as inner_tape:
-                loss = self.loss_fn(self.model(self.x), self.y)
-            # params = self.model.trainable_variables if layer_idx is None else self.model.layers[layer_idx].trainable_variables
-            # tf.print(f"\n\n##{self.model.trainable_variables}##\n\n")
-            params = (
-                self.model.trainable_variables
-                if layer_idx is None
-                else self.model.trainable_variables[layer_idx]
-            )
-            grads = inner_tape.gradient(loss, params)
-        # Compute the Hessian vector product
-        return outer_tape.gradient(grads, params, output_gradients=v)
+    #     with tf.GradientTape() as outer_tape:
+    #         with tf.GradientTape() as inner_tape:
+    #             loss = self.loss_fn(self.model(self.x), self.y)
+    #         # params = self.model.trainable_variables if layer_idx is None else self.model.layers[layer_idx].trainable_variables
+    #         # tf.print(f"\n\n##{self.model.trainable_variables}##\n\n")
+    #         params = (
+    #             self.model.trainable_variables
+    #             if layer_idx is None
+    #             else self.model.trainable_variables[layer_idx]
+    #         )
+    #         grads = inner_tape.gradient(loss, params)
+    #     # Compute the Hessian vector product
+    #     return outer_tape.gradient(grads, params, output_gradients=v)
 
     def layer_hessian_vector_product_hack(
         self, v, super_layer_idx=None, layer_idx=None
@@ -96,6 +96,41 @@ class HessianMetrics:
             temp_hv = [
                 THv1 + Hv1 * float(len(batch_x)) for THv1, Hv1 in zip(temp_hv, hv)
             ]
+        temp_hv = [THv1 / float(num_data) for THv1 in temp_hv]
+        eigenvalue = tf.reduce_sum(
+            [tf.reduce_sum(THv1 * v1) for THv1, v1 in zip(temp_hv, v)]
+        )
+        # Compute the Hessian vector product
+        return temp_hv, eigenvalue
+
+    def hessian_vector_product(self, v):
+        """
+        Compute the Hessian vector product of Hv, where
+        H is the Hessian of the loss function with respect to the model parameters
+        v is a vector of the same size as the model parameters
+
+        Based on: https://github.com/tensorflow/tensorflow/blob/47f0e99c1918f68daa84bd4cac1b6011b2942dac/tensorflow/python/eager/benchmarks/resnet50/hvp_test.py#L62
+        """
+        # Compute the gradients of the loss function with respect to the model parameters
+        params = [
+            v
+            for i in self.layer_indices
+            for v in self.model.layers[i].trainable_variables
+        ]
+        num_data = 0
+        temp_hv = [tf.zeros_like(p) for p in params]
+        for batch_x, batch_y in zip(self.batched_x, self.batched_y):
+            with tf.GradientTape() as outer_tape:
+                with tf.GradientTape() as inner_tape:
+                    loss = self.loss_fn(self.model(batch_x), batch_y)
+                # Compute the gradient inside the outer `out_tape` context manager
+                # which means the gradient computation is differentiable as well.
+                grads = inner_tape.gradient(loss, params)
+            hv = outer_tape.gradient(grads, params, output_gradients=v)
+            temp_hv = [
+                THv1 + Hv1 * float(len(batch_x)) for THv1, Hv1 in zip(temp_hv, hv)
+            ]
+            num_data += len(batch_x)
         temp_hv = [THv1 / float(num_data) for THv1 in temp_hv]
         eigenvalue = tf.reduce_sum(
             [tf.reduce_sum(THv1 * v1) for THv1, v1 in zip(temp_hv, v)]
@@ -141,42 +176,46 @@ class HessianMetrics:
         # Compute the Hessian vector product
         return temp_hv, eigenvalue
 
-    # def trace(self, max_iter=100, tolerance=1e-3):
-    #     """
-    #     Compute the trace of the Hessian using Hutchinson's method
-    #     max_iter: maximimum number of iterations used to compute trace
-    #     tolerance: tolerance for convergence
-    #     """
-    #     layer_traces = {}
-    #     for l_i in self.layer_indices:
-    #         layer_name = self.model.layers[l_i].name
-    #         # print(f"Computing trace for layer {layer_name}")
-    #         trace_vhv = []
-    #         trace = 0.0
-
-    #         for i in range(max_iter):
-    #             v = [
-    #                 np.random.uniform(
-    #                     size=self.model.layers[l_i].trainable_variables[i].shape
-    #                 )
-    #                 for i in range(len(self.model.layers[l_i].trainable_variables))
-    #             ]
-    #             # Generate Rademacher random variables
-    #             for vi in v:
-    #                 vi[vi < 0.5] = -1
-    #                 vi[vi >= 0.5] = 1
-    #             v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
-    #             # Compute the Hessian vector product
-    #             hv = self.hessian_vector_product(v, layer_idx=l_i)
-    #             # Compute the trace
-    #             trace_vhv.append(
-    #                 tf.reduce_sum([tf.reduce_sum(vi * hvi) for (vi, hvi) in zip(v, hv)])
-    #             )
-    #             if abs(np.mean(trace_vhv) - trace) / (abs(trace) + 1e-6) < tolerance:
-    #                 layer_traces[layer_name] = np.mean(trace_vhv)
-    #             else:
-    #                 trace = np.mean(trace_vhv)
-    #     return layer_traces
+    def trace(self, max_iter=100, tolerance=1e-3):
+        """
+        Compute the trace of the Hessian using Hutchinson's method
+        max_iter: maximimum number of iterations used to compute trace
+        tolerance: tolerance for convergence
+        """
+        trace = 0.0
+        trace_vhv = []
+        layer_trace_vhv = []
+        params = [
+            v
+            for i in self.layer_indices
+            for v in self.model.layers[i].trainable_variables
+        ]
+        # for i in range(max_iter):
+        while True:
+            v = [np.random.uniform(size=p.shape) for p in params]
+            # Generate Rademacher random variables
+            for vi in v:
+                vi[vi < 0.5] = -1
+                vi[vi >= 0.5] = 1
+            v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
+            # Compute the Hessian vector product
+            hv, _ = self.hessian_vector_product(v)
+            # Compute the trace
+            curr_trace_vhv = [tf.reduce_sum(vi * hvi) for (vi, hvi) in zip(v, hv)]
+            layer_trace_vhv.append(curr_trace_vhv)
+            trace_vhv.append(tf.reduce_sum(curr_trace_vhv))
+            if abs(np.mean(trace_vhv) - trace) / (abs(trace) + 1e-6) < tolerance:
+                break
+            else:
+                trace = np.mean(trace_vhv)
+        # TODO: Create a dictionary of layer names and their traces
+        # trace_dict = {}
+        # for i, l_i in enumerate(layer_indices):
+        # TODO: Take dot product of weights and biases for a layer across all
+        # iterations and take the mean
+        #     layer_name = self.model.layers[sl_i].layers[l_i].name
+        #     trace_dict[layer_name] = np.mean(layer_trace_vhv, axis=0)[i]
+        return np.mean(trace_vhv)
 
     def trace_hack(self, max_iter=100, tolerance=1e-3):
         """
@@ -438,7 +477,8 @@ class HessianMetrics:
             if eigenvalues:
                 curr_eigenvalue = eigenvalues[i].numpy()
                 combined_eigenvector = combined_eigenvector * curr_eigenvalue
-            scalar_rank = np.dot(combined_eigenvector, params)
+            # scalar_rank = np.dot(combined_eigenvector, params)
+            scalar_rank = 1
             combined_eigenvector_score += np.abs(scalar_rank * combined_eigenvector)
         return combined_eigenvector_score
 
@@ -469,13 +509,23 @@ class HessianMetrics:
             flat_eigenvector_matrix[j] = combined_eigenvector
         # Compute score for each parameter
         for i in range(combined_eigenvector_score.size):
+            # print(f"Flat eigenvector matrix[{i}][{j}]: {flat_eigenvector_matrix[i][j]}")
+            print(f"Params[{i}]: {params[i]}")
             combined_eigenvector_score[i] = np.sum(
-                [
-                    np.dot(np.abs(flat_eigenvector_matrix[j][i]), params[i])
-                    for j in range(k)
-                ]
+                [np.abs(flat_eigenvector_matrix[j][i]) * params[i] for j in range(k)]
             )
         return combined_eigenvector_score
+
+    def rank_bits(self, param_scores, num_bits):
+        """
+        Given a list of parameter scores, return a list of bit indices sorted by
+        the highest scoring bits.
+        Decompose the parameter scores bitwise into powers of 2 then multiply
+        these components
+        """
+        # I need the QKeras quantizer to get the proper fixed point bit
+        # representation
+        pass
 
     def hessian_ranking(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
         """
