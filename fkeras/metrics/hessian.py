@@ -523,9 +523,47 @@ class HessianMetrics:
         Decompose the parameter scores bitwise into powers of 2 then multiply
         these components
         """
-        # I need the QKeras quantizer to get the proper fixed point bit
-        # representation
-        pass
+        # param _scores is len n and want an array of n * m (m = num bits)
+        bitwise_scores = []
+
+        bitwise_weights = np.array([2**x for x in range(num_bits - 1, -1, -1)])
+
+        for param_score in param_scores:
+            curr_scores = param_score * bitwise_weights
+            bitwise_scores.extend(curr_scores)
+
+        bitwise_scores = np.array(bitwise_scores)
+        bitwise_rank = np.flip(np.argsort(bitwise_scores))
+        bitwise_scores = bitwise_scores[bitwise_rank]
+
+        return bitwise_rank, bitwise_scores
+
+    def sort_bits_MSB_to_LSB(self, param_bit_order_ranking, num_bits):
+        """
+        Given a bit ranking in which the bits are ordered from MSB to LSB in
+        parameter order, return a list of bit indices where all the MSBs are first,
+        followed by all the MSBs - 1, etc.
+        """
+
+        bit_rank = []
+        for i in range(num_bits):
+            bit_group = param_bit_order_ranking[i::num_bits]
+            bit_rank.extend(bit_group)
+
+        return np.array(bit_rank)
+
+    def convert_param_ranking_to_msb_bit_ranking(self, param_ranking, num_bits):
+        # Convert param ranking to bit ranking
+        bit_level_rank = []
+
+        for param in param_ranking:
+            bit_idx = param * num_bits
+            bit_level_rank.append(bit_idx)
+            for j in range(1, num_bits):
+                bit_level_rank.append(bit_idx + j)
+        # Sort from MSB to LSB
+        bit_level_rank = self.sort_bits_MSB_to_LSB(bit_level_rank, num_bits)
+        return bit_level_rank
 
     def hessian_ranking(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
         """
