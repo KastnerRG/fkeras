@@ -122,7 +122,7 @@ class HessianMetrics:
         for batch_x, batch_y in zip(self.batched_x, self.batched_y):
             with tf.GradientTape() as outer_tape:
                 with tf.GradientTape() as inner_tape:
-                    loss = self.loss_fn(self.model(batch_x), batch_y)
+                    loss = self.loss_fn(self.model(batch_x, training=True), batch_y)
                 # Compute the gradient inside the outer `out_tape` context manager
                 # which means the gradient computation is differentiable as well.
                 grads = inner_tape.gradient(loss, params)
@@ -160,7 +160,7 @@ class HessianMetrics:
         for batch_x, batch_y in zip(self.batched_x, self.batched_y):
             with tf.GradientTape() as outer_tape:
                 with tf.GradientTape() as inner_tape:
-                    loss = self.loss_fn(self.model(batch_x), batch_y)
+                    loss = self.loss_fn(self.model(batch_x, training=True), batch_y)
                 # Compute the gradient inside the outer `out_tape` context manager
                 # which means the gradient computation is differentiable as well.
                 grads = inner_tape.gradient(loss, params)
