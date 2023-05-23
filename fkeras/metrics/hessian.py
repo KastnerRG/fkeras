@@ -651,6 +651,48 @@ class HessianMetrics:
         param_scores = eigenvector_rank[param_ranking]
         print(f"parameter_ranking: {param_ranking[:15]}")
         return param_ranking, param_scores
+    
+    def hessian_ranking_general(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
+        """
+        Given list of eigenvectors and eigenvalues, compute the sensitivity.
+        Use Hessian to rank parameters based on sensitivity to bit flips with
+        respect to all parameters (not by layer like layer_hessian_ranking).
+        """
+        # Get all parameters of the model and flatten and concat into one list
+        params = [
+            v
+            for i in self.layer_indices
+            for v in self.model.layers[i].trainable_variables
+        ]
+        # for sl_i in self.layer_indices:
+        #     super_layer = self.model.layers[sl_i]
+        #     for l_i in self.get_layers_with_trainable_params(super_layer):
+        #         params.append(  # Weights only
+        #             self.model.layers[sl_i].layers[l_i].trainable_variables[0].numpy()
+        #         )
+        #     break  # Compute for encoder only
+        # Flatten and concatenate all eigenvectors into one list
+        params = np.concatenate(params, axis=None)
+        params = params.flatten()
+        print(f"params shape: {params.shape}")
+        if strategy == "sum":
+            eigenvector_rank = self.do_sum_hessian_rank(
+                params, eigenvectors, eigenvalues, k
+            )
+        elif strategy == "max":
+            eigenvector_rank = self.do_max_hessian_rank(
+                params, eigenvectors, eigenvalues, k
+            )
+        # conv_rank = eigenvector_rank[: 72]
+        # dense_rank = eigenvector_rank[72:]
+        # conv_ranking = np.flip(np.argsort(np.abs(conv_rank)))
+        # dense_ranking = np.flip(np.argsort(np.abs(dense_rank)))
+        # print(f"conv_ranking: {conv_ranking[:10]}")
+        # print(f"dense_ranking: {dense_ranking[:10]}")
+        param_ranking = np.flip(np.argsort(np.abs(eigenvector_rank)))
+        param_scores = eigenvector_rank[param_ranking]
+        print(f"parameter_ranking: {param_ranking[:15]}")
+        return param_ranking, param_scores
 
     def layer_gradient_ranking(self):
         """
@@ -685,4 +727,39 @@ class HessianMetrics:
                     for i in range(len(param_ranking))
                 ]
             break  # Compute for encoder only
+        return grad_ranking, grad_dict
+    
+    def layer_gradient_ranking_general(self):
+        """
+        Rank parameters based on gradient magnitude per layer
+        """
+        grad_ranking = {}
+        grad_dict = {}
+        # for sl_i in self.layer_indices:
+        #     super_layer = self.model.layers[sl_i]
+        for l_i in self.layer_indices:
+            layer_name = self.model.layers[l_i].name
+            print(f"Gradient ranking by sensitivity for layer {layer_name}")
+            # Compute gradient ranking
+            with tf.GradientTape() as inner_tape:
+                loss = self.loss_fn(self.model(self.x), self.y)
+                params = (
+                    self.model.trainable_variables
+                    if l_i is None
+                    else self.model.layers[l_i].trainable_variables
+                )
+                grads = inner_tape.gradient(loss, params)
+            grads = grads[0].numpy()
+            grad_dict[layer_name] = grads
+            print(f"grads shape: {grads.shape}")
+            grads = grads.flatten()
+            print(f"flat grads shape: {grads.shape}")
+            param_ranking = np.flip(np.argsort(np.abs(grads)))
+            param_rank_score = grads[param_ranking]
+            print(f"grad parameter_ranking: {param_ranking[:10]}")
+            grad_ranking[layer_name] = [
+                (param_ranking[i], param_rank_score[i])
+                for i in range(len(param_ranking))
+            ]
+
         return grad_ranking, grad_dict
