@@ -531,6 +531,34 @@ class HessianMetrics:
             print(f"combined_eigenvector = {combined_eigenvector.shape}")
             combined_eigenvector_score += np.abs(scalar_rank * combined_eigenvector)
         return combined_eigenvector_score
+    
+    def do_sum_hessian_rank_general(self, params, eigenvectors, eigenvalues, k, iter_by=2):
+        """
+        Given flattened list of parameters, list of eigenvectors, and list of
+        eigenvalues, compute the eigenvector/value scores.
+
+        Combine the weight eigenvectors into a single vector for model-wide
+        parameter sensitivity ranking using weighted sum strategy.
+        Return a list of eigenvector/eigenvalue
+        scores, one score for each parameter.
+        Curren method: weighted sum of eigenvectors
+        """
+        combined_eigenvector_score = np.zeros(params.size)
+        for i in range(k):
+            combined_eigenvector = []
+            for j in range(0, len(eigenvectors[i]), iter_by):
+                # Go every 2 to ignore biases
+                ev = eigenvectors[i][j]  # Weight eigenvector
+                combined_eigenvector.extend(ev.flatten())
+            combined_eigenvector = np.array(combined_eigenvector)
+            if eigenvalues:
+                curr_eigenvalue = eigenvalues[i].numpy()
+                combined_eigenvector = combined_eigenvector * curr_eigenvalue
+            # scalar_rank = np.dot(combined_eigenvector, params)
+            scalar_rank = 1
+            print(f"combined_eigenvector = {combined_eigenvector.shape}")
+            combined_eigenvector_score += np.abs(scalar_rank * combined_eigenvector)
+        return combined_eigenvector_score
 
     def do_max_hessian_rank(self, params, eigenvectors, eigenvalues, k):
         """
@@ -684,7 +712,7 @@ class HessianMetrics:
         params = params.flatten()
         print(f"params shape: {params.shape}")
         if strategy == "sum":
-            eigenvector_rank = self.do_sum_hessian_rank(
+            eigenvector_rank = self.do_sum_hessian_rank_general(
                 params, eigenvectors, eigenvalues, k, iter_by=iter_by
             )
         elif strategy == "max":
