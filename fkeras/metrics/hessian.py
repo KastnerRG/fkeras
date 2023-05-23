@@ -393,6 +393,55 @@ class HessianMetrics:
             break  # Compute for encoder only
         return eigenvalues, eigenvectors
 
+
+    def top_k_eigenvalues(self, k=1, max_iter=100, tolerance=1e-3):
+        """
+        Compute the top k eigenvalues and eigenvectors of the Hessian using the
+        power iteration method. The eigenvalues are sorted in descending order.
+        k: number of eigenvalues to compute
+        max_iter: maximum number of iterations used to compute eigenvalues
+        tolerance: tolerance for convergence
+        """
+        params = [
+            v
+            for i in self.layer_indices
+            for v in self.model.layers[i].trainable_variables
+        ]
+        eigenvalues = []
+        eigenvectors = []
+        
+        for _ in range(k):
+            eigenvalue = None
+            # Initialize the eigenvector
+            v = [np.random.uniform(size=p.shape) for p in params]
+            v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
+            # Normalize the eigenvector
+            v = self.normalize_vector_list(v)
+            for j in range(max_iter):
+                # Make v orthonormal to eigenvectors
+                for ei in eigenvectors:
+                    v = [vi - tf.reduce_sum(vi * e) * e for (vi, e) in zip(v, ei)]
+                v = self.normalize_vector_list(v)
+                # Compute the Hessian vector product
+                hv, tmp_eigenvalue = self.hessian_vector_product(v)
+                # Normalize the eigenvector
+                v = self.normalize_vector_list(hv)
+                if eigenvalue == None:
+                    eigenvalue = tmp_eigenvalue
+                else:
+                    if (
+                        abs(tmp_eigenvalue - eigenvalue) / (abs(eigenvalue) + 1e-6)
+                        < tolerance
+                    ):
+                        break
+                    else:
+                        eigenvalue = tmp_eigenvalue
+            eigenvalues.append(eigenvalue)
+            eigenvectors.append(v)
+
+        return eigenvalues, eigenvectors
+
+
     def layer_hessian_ranking(self, layer_eigenvectors, layer_eigenvalues=None, k=1):
         """
         Use the top eigenvalues and eigenvectors of the hessian to rank the
