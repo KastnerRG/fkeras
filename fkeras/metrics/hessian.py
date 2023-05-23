@@ -504,7 +504,7 @@ class HessianMetrics:
             break  # Compute for encoder only
         return sensitivity_ranking
 
-    def do_sum_hessian_rank(self, params, eigenvectors, eigenvalues, k):
+    def do_sum_hessian_rank(self, params, eigenvectors, eigenvalues, k, iter_by=2):
         """
         Given flattened list of parameters, list of eigenvectors, and list of
         eigenvalues, compute the eigenvector/value scores.
@@ -518,7 +518,7 @@ class HessianMetrics:
         combined_eigenvector_score = np.zeros(params.size)
         for i in range(k):
             combined_eigenvector = []
-            for j in range(0, len(eigenvectors[i]), 2):
+            for j in range(0, len(eigenvectors[i]), iter_by):
                 # Go every 2 to ignore biases
                 ev = eigenvectors[i][j].numpy()  # Weight eigenvector
                 combined_eigenvector.extend(ev.flatten())
@@ -528,6 +528,7 @@ class HessianMetrics:
                 combined_eigenvector = combined_eigenvector * curr_eigenvalue
             # scalar_rank = np.dot(combined_eigenvector, params)
             scalar_rank = 1
+            print(f"combined_eigenvector = {combined_eigenvector.shape}")
             combined_eigenvector_score += np.abs(scalar_rank * combined_eigenvector)
         return combined_eigenvector_score
 
@@ -652,7 +653,7 @@ class HessianMetrics:
         print(f"parameter_ranking: {param_ranking[:15]}")
         return param_ranking, param_scores
     
-    def hessian_ranking_general(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
+    def hessian_ranking_general(self, eigenvectors, eigenvalues=None, k=1, strategy="sum", iter_by=1):
         """
         Given list of eigenvectors and eigenvalues, compute the sensitivity.
         Use Hessian to rank parameters based on sensitivity to bit flips with
@@ -664,6 +665,13 @@ class HessianMetrics:
             for i in self.layer_indices
             for v in self.model.layers[i].trainable_variables
         ]
+        sanitized_params = list()
+        for j in range(len(params)):
+            if np.array(params[j]).size > 32:
+                sanitized_params.append(np.array(params[j]))
+
+                print(f"sanitized param = {np.array(params[j]).shape}")
+        params = sanitized_params
         # for sl_i in self.layer_indices:
         #     super_layer = self.model.layers[sl_i]
         #     for l_i in self.get_layers_with_trainable_params(super_layer):
@@ -677,7 +685,7 @@ class HessianMetrics:
         print(f"params shape: {params.shape}")
         if strategy == "sum":
             eigenvector_rank = self.do_sum_hessian_rank(
-                params, eigenvectors, eigenvalues, k
+                params, eigenvectors, eigenvalues, k, iter_by=iter_by
             )
         elif strategy == "max":
             eigenvector_rank = self.do_max_hessian_rank(
