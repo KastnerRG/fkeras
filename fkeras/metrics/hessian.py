@@ -637,6 +637,9 @@ class HessianMetrics:
         for param in param_ranking:
             bit_idx = param * num_bits
             bit_level_rank.append(bit_idx)
+
+            print(f"bit_idx = {bit_idx}")
+
             for j in range(1, num_bits):
                 bit_level_rank.append(bit_idx + j)
         # Sort from MSB to LSB
