@@ -772,8 +772,9 @@ class HessianMetrics:
         """
         Rank parameters based on gradient magnitude per layer
         """
-        grad_ranking = {}
-        grad_dict = {}
+        grad_ranking = []
+        grad_scores  = []
+        #grad_dict = {}
         # for sl_i in self.layer_indices:
         #     super_layer = self.model.layers[sl_i]
         for l_i in self.layer_indices:
@@ -789,16 +790,20 @@ class HessianMetrics:
                 )
                 grads = inner_tape.gradient(loss, params)
             grads = grads[0].numpy()
-            grad_dict[layer_name] = grads
+            #grad_dict[layer_name] = grads
             print(f"grads shape: {grads.shape}")
             grads = grads.flatten()
             print(f"flat grads shape: {grads.shape}")
             param_ranking = np.flip(np.argsort(np.abs(grads)))
             param_rank_score = grads[param_ranking]
             print(f"grad parameter_ranking: {param_ranking[:10]}")
-            grad_ranking[layer_name] = [
-                (param_ranking[i], param_rank_score[i])
-                for i in range(len(param_ranking))
-            ]
+            # grad_ranking[layer_name] = [
+            #     (param_ranking[i], param_rank_score[i])
+            #     for i in range(len(param_ranking))
+            # ]
+            
 
-        return grad_ranking, grad_dict
+            grad_ranking += [param_ranking[i] for i in range(len(param_ranking))]
+            grad_scores += [param_rank_score[i] for i in range(len(param_ranking))]
+
+        return grad_ranking, grad_scores #, grad_dict
