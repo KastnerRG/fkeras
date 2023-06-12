@@ -408,11 +408,6 @@ class HessianMetrics:
             for v in self.model.layers[i].trainable_variables
         ]
 
-        bn_indices = []
-        for i in self.layer_indices:
-            if self.model.layers[i].__class__.__name__ == "BatchNormalization":
-                bn_indices.append(i)
-
         eigenvalues = []
         eigenvectors = []
         
@@ -443,11 +438,17 @@ class HessianMetrics:
                     else:
                         eigenvalue = tmp_eigenvalue
             eigenvalues.append(eigenvalue)
-            
-            if not rank_BN:
-                v =  [tensor for i, tensor in enumerate(v) if i not in bn_indices]
-
             eigenvectors.append(v)
+        
+        if not rank_BN:
+            bn_indices = []
+            for i in self.layer_indices:
+                if self.model.layers[i].__class__.__name__ == "BatchNormalization":
+                    bn_indices.append(i)
+
+            for ei in eigenvectors:
+                for v in ei:
+                    v =  [tensor for i, tensor in enumerate(v) if i not in bn_indices]
 
         return eigenvalues, eigenvectors
 
