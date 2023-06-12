@@ -416,6 +416,7 @@ class HessianMetrics:
         for i, layer in enumerate(self.model.layers):
             print(f"Layer[{i:02}] Class = {layer.__class__.__name__}")
             print(f"Layer[{i:02}] len of get_weights() = {layer.get_weights().__len__()}")
+            print(f"Layer[{i:02}] len of trainable_variables = {layer.trainable_variables.__len__()}")
 
 
 
@@ -460,7 +461,29 @@ class HessianMetrics:
             for i in self.layer_indices:
                 if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
                     supported_indices.append(running_idx)
-                running_idx += self.model.layers[i].get_weights().__len__()
+                running_idx += self.model.layers[i].trainable_variables.__len__()
+
+            
+#########
+            # supported_indices = []
+            # for i, layer_with_tp_idx in enumerate(self.layer_indices):
+            #     layer_with_tp = self.model.layers[layer_with_tp_idx]
+
+            #     is_supported_layer = layer_with_tp.__class__.__name__ in SUPPORTED_LAYERS
+            #     if is_supported_layer:
+                    
+            #         has_bias = layer_with_tp.get_weights().__len__() > 1
+            #         if has_bias:
+            #             supported_indices.append( (layer_with_tp_idx, i) )
+            #         else:
+
+
+
+
+
+
+#########
+
 
 
 
