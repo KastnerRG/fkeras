@@ -446,7 +446,8 @@ class HessianMetrics:
         for i in range(k):
             curr_evs = []
             for j in range(len(eigenvectors[i])):
-                if np.array(eigenvectors[i][j]).size > 32:
+                # if np.array(eigenvectors[i][j]).size > 32:
+                if j not in bn_indices:
                     curr_evs.append(np.array(eigenvectors[i][j]))
             sanitized_evs.append(np.array(curr_evs))
         
