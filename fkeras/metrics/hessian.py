@@ -4,7 +4,7 @@ from tensorflow.python.util import nest
 from tensorflow.python.keras import backend
 from tensorflow.python.ops import gradients
 
-from fmodel import SUPPORTED_LAYERS
+from ..fmodel import SUPPORTED_LAYERS
 
 
 class HessianMetrics:
