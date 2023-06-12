@@ -438,7 +438,7 @@ class HessianMetrics:
                     else:
                         eigenvalue = tmp_eigenvalue
             eigenvalues.append(eigenvalue)
-            eigenvectors.append(v)
+            eigenvectors.append(np.array(v))
         
         if not rank_BN:
             bn_indices = []
