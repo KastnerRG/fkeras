@@ -443,34 +443,26 @@ class HessianMetrics:
             eigenvectors.append(np.array(v))
 
 
+        
         if not rank_BN:
-            bn_indices = []
+            supported_indices = []
             for i in self.layer_indices:
-                if self.model.layers[i].__class__.__name__ not in SUPPORTED_LAYERS:
-                    bn_indices.append(i)
+                if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
+                    supported_indices.append(i)
 
-##############
+            print(f"Length of supported_indices = {supported_indices.__len__()}")
             sanitized_evs = []
             for i in range(k):
                 curr_evs = []
+                print(f"Length of eigenvectors[i] = {eigenvectors[i].__len__()}")
                 for j in range(len(eigenvectors[i])):
                     # if np.array(eigenvectors[i][j]).size > 32:
-                    if j not in bn_indices:
+                    if j in supported_indices:
                         curr_evs.append(np.array(eigenvectors[i][j]))
                 sanitized_evs.append(np.array(curr_evs))
             
             print(f"len of sanitized_evs[0] = {sanitized_evs[0].__len__()}")
-##############
-            sanitized_evs_V2 = []
-            for ei in eigenvectors:
-                new_v = []
-                for v in ei:
-                    new_v += [np.array(tensor) for i, tensor in enumerate(v) if i not in bn_indices]
-                
-                sanitized_evs_V2.append(new_v)
-                    
-
-        print(f"len of sanitized_evs[0] (V2) = {sanitized_evs_V2[0].__len__()}")
+            eigenvectors = sanitized_evs
 
         return eigenvalues, eigenvectors
 
