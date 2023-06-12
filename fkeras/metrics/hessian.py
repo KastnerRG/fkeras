@@ -4,6 +4,8 @@ from tensorflow.python.util import nest
 from tensorflow.python.keras import backend
 from tensorflow.python.ops import gradients
 
+from fmodel import SUPPORTED_LAYERS
+
 
 class HessianMetrics:
     """
@@ -441,23 +443,24 @@ class HessianMetrics:
             eigenvectors.append(np.array(v))
 
 
-##############
-        sanitized_evs = []
-        for i in range(k):
-            curr_evs = []
-            for j in range(len(eigenvectors[i])):
-                # if np.array(eigenvectors[i][j]).size > 32:
-                if j not in bn_indices:
-                    curr_evs.append(np.array(eigenvectors[i][j]))
-            sanitized_evs.append(np.array(curr_evs))
-        
-        print(f"len of sanitized_evs[0] = {sanitized_evs[0].__len__()}")
-##############
         if not rank_BN:
             bn_indices = []
             for i in self.layer_indices:
-                if self.model.layers[i].__class__.__name__ == "BatchNormalization":
+                if self.model.layers[i].__class__.__name__ not in SUPPORTED_LAYERS:
                     bn_indices.append(i)
+
+##############
+            sanitized_evs = []
+            for i in range(k):
+                curr_evs = []
+                for j in range(len(eigenvectors[i])):
+                    # if np.array(eigenvectors[i][j]).size > 32:
+                    if j not in bn_indices:
+                        curr_evs.append(np.array(eigenvectors[i][j]))
+                sanitized_evs.append(np.array(curr_evs))
+            
+            print(f"len of sanitized_evs[0] = {sanitized_evs[0].__len__()}")
+##############
 
             for ei in eigenvectors:
                 for v in ei:
