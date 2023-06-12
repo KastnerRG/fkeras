@@ -394,7 +394,7 @@ class HessianMetrics:
         return eigenvalues, eigenvectors
 
 
-    def top_k_eigenvalues(self, k=1, max_iter=100, tolerance=1e-3):
+    def top_k_eigenvalues(self, k=1, max_iter=100, tolerance=1e-3, rank_BN=True):
         """
         Compute the top k eigenvalues and eigenvectors of the Hessian using the
         power iteration method. The eigenvalues are sorted in descending order.
@@ -407,6 +407,12 @@ class HessianMetrics:
             for i in self.layer_indices
             for v in self.model.layers[i].trainable_variables
         ]
+
+        bn_indices = []
+        for i in self.layer_indices:
+            if self.model.layers[i].__class__.__name__ == "BatchNormalization":
+                bn_indices.append(i)
+
         eigenvalues = []
         eigenvectors = []
         
@@ -437,6 +443,10 @@ class HessianMetrics:
                     else:
                         eigenvalue = tmp_eigenvalue
             eigenvalues.append(eigenvalue)
+            
+            if not rank_BN:
+                v =  [tensor for i, tensor in enumerate(v) if i not in bn_indices]
+
             eigenvectors.append(v)
 
         return eigenvalues, eigenvectors
@@ -638,8 +648,6 @@ class HessianMetrics:
             bit_idx = param * num_bits
             bit_level_rank.append(bit_idx)
 
-            print(f"bit_idx = {bit_idx}")
-
             for j in range(1, num_bits):
                 bit_level_rank.append(bit_idx + j)
         # Sort from MSB to LSB
@@ -673,12 +681,6 @@ class HessianMetrics:
             eigenvector_rank = self.do_max_hessian_rank(
                 params, eigenvectors, eigenvalues, k
             )
-        # conv_rank = eigenvector_rank[: 72]
-        # dense_rank = eigenvector_rank[72:]
-        # conv_ranking = np.flip(np.argsort(np.abs(conv_rank)))
-        # dense_ranking = np.flip(np.argsort(np.abs(dense_rank)))
-        # print(f"conv_ranking: {conv_ranking[:10]}")
-        # print(f"dense_ranking: {dense_ranking[:10]}")
         param_ranking = np.flip(np.argsort(np.abs(eigenvector_rank)))
         param_scores = eigenvector_rank[param_ranking]
         print(f"parameter_ranking: {param_ranking[:15]}")
@@ -703,13 +705,7 @@ class HessianMetrics:
 
                 print(f"sanitized param = {np.array(params[j]).shape}")
         params = sanitized_params
-        # for sl_i in self.layer_indices:
-        #     super_layer = self.model.layers[sl_i]
-        #     for l_i in self.get_layers_with_trainable_params(super_layer):
-        #         params.append(  # Weights only
-        #             self.model.layers[sl_i].layers[l_i].trainable_variables[0].numpy()
-        #         )
-        #     break  # Compute for encoder only
+
         # Flatten and concatenate all eigenvectors into one list
         params = np.concatenate(params, axis=None)
         params = params.flatten()
@@ -722,12 +718,6 @@ class HessianMetrics:
             eigenvector_rank = self.do_max_hessian_rank(
                 params, eigenvectors, eigenvalues, k
             )
-        # conv_rank = eigenvector_rank[: 72]
-        # dense_rank = eigenvector_rank[72:]
-        # conv_ranking = np.flip(np.argsort(np.abs(conv_rank)))
-        # dense_ranking = np.flip(np.argsort(np.abs(dense_rank)))
-        # print(f"conv_ranking: {conv_ranking[:10]}")
-        # print(f"dense_ranking: {dense_ranking[:10]}")
         param_ranking = np.flip(np.argsort(np.abs(eigenvector_rank)))
         param_scores = eigenvector_rank[param_ranking]
         print(f"parameter_ranking: {param_ranking[:15]}")
@@ -797,12 +787,7 @@ class HessianMetrics:
             param_ranking = np.flip(np.argsort(np.abs(grads)))
             param_rank_score = grads[param_ranking]
             print(f"grad parameter_ranking: {param_ranking[:10]}")
-            # grad_ranking[layer_name] = [
-            #     (param_ranking[i], param_rank_score[i])
-            #     for i in range(len(param_ranking))
-            # ]
             
-
             grad_ranking += [param_ranking[i] for i in range(len(param_ranking))]
             grad_scores += [param_rank_score[i] for i in range(len(param_ranking))]
 
