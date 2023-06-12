@@ -410,6 +410,9 @@ class HessianMetrics:
             for v in self.model.layers[i].trainable_variables
         ]
 
+        print(f"Length of self.layer_indices = {self.layer_indices.__len__()}")
+        print(f"Length of self.model.layers  = {self.model.layers.__len__()}")
+
         for i, p in enumerate(params):
             print(f"params[{i}] = {p.shape}")
 
