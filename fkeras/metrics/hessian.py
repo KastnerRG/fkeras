@@ -439,7 +439,19 @@ class HessianMetrics:
                         eigenvalue = tmp_eigenvalue
             eigenvalues.append(eigenvalue)
             eigenvectors.append(np.array(v))
+
+
+##############
+        sanitized_evs = []
+        for i in range(k):
+            curr_evs = []
+            for j in range(len(eigenvectors[i])):
+                if np.array(eigenvectors[i][j]).size > 32:
+                    curr_evs.append(np.array(eigenvectors[i][j]))
+            sanitized_evs.append(np.array(curr_evs))
         
+        print(f"len of sanitized_evs[0] = {sanitized_evs[0].__len__()}")
+##############
         if not rank_BN:
             bn_indices = []
             for i in self.layer_indices:
@@ -448,7 +460,9 @@ class HessianMetrics:
 
             for ei in eigenvectors:
                 for v in ei:
-                    v =  [tensor for i, tensor in enumerate(v) if i not in bn_indices]
+                    v =  [np.array(tensor) for i, tensor in enumerate(v) if i not in bn_indices]
+
+        print(f"len of sanitized_evs[0] (V2) = {eigenvectors[0].__len__()}")
 
         return eigenvalues, eigenvectors
 
@@ -559,7 +573,7 @@ class HessianMetrics:
             combined_eigenvector = []
             for j in range(0, len(eigenvectors[i]), iter_by):
                 # Go every 2 to ignore biases
-                ev = eigenvectors[i][j]  # Weight eigenvector
+                ev = np.array(eigenvectors[i][j])  # Weight eigenvector
                 combined_eigenvector.extend(ev.flatten())
             combined_eigenvector = np.array(combined_eigenvector)
             if eigenvalues:
