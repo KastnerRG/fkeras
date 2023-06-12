@@ -410,6 +410,9 @@ class HessianMetrics:
             for v in self.model.layers[i].trainable_variables
         ]
 
+        for i, p in enumerate(params):
+            print(f"params[{i}] = {p.shape}")
+
         eigenvalues = []
         eigenvectors = []
         
