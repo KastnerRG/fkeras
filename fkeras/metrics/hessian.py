@@ -461,12 +461,16 @@ class HessianMetrics:
             
             print(f"len of sanitized_evs[0] = {sanitized_evs[0].__len__()}")
 ##############
-
+            sanitized_evs_V2 = []
             for ei in eigenvectors:
+                new_v = []
                 for v in ei:
-                    v =  [np.array(tensor) for i, tensor in enumerate(v) if i not in bn_indices]
+                    new_v += [np.array(tensor) for i, tensor in enumerate(v) if i not in bn_indices]
+                
+                sanitized_evs_V2.append(new_v)
+                    
 
-        print(f"len of sanitized_evs[0] (V2) = {eigenvectors[0].__len__()}")
+        print(f"len of sanitized_evs[0] (V2) = {sanitized_evs_V2[0].__len__()}")
 
         return eigenvalues, eigenvectors
 
