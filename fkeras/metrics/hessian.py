@@ -455,11 +455,12 @@ class HessianMetrics:
         
         if not rank_BN:
             supported_indices = []
-            running_idx = self.layer_indices[0]
+            running_idx = 0
             for i in self.layer_indices:
                 if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
                     supported_indices.append(running_idx)
-                running_idx += i + self.model.layers[i].get_weights().__len__()
+                running_idx += self.model.layers[i].get_weights().__len__()
+
 
 
             for i, idx in enumerate(supported_indices):
