@@ -452,16 +452,15 @@ class HessianMetrics:
                         eigenvalue = tmp_eigenvalue
             eigenvalues.append(eigenvalue)
             eigenvectors.append(np.array(v))
-
-
         
         if not rank_BN:
             supported_indices = []
+            running_idx = self.layer_indices[0]
             for i in self.layer_indices:
                 if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
-                # if self.model.layers[i].get_weights().__len__() == 1:
+                    supported_indices.append(running_idx)
+                running_idx += i + self.model.layers[i].get_weights().__len__()
 
-                    supported_indices.append(i)
 
             for i, idx in enumerate(supported_indices):
                 print(f"supported_indices[{i}] = {idx}")
