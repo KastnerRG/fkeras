@@ -453,6 +453,9 @@ class HessianMetrics:
                 if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
                     supported_indices.append(i)
 
+            for i, idx in enumerate(supported_indices):
+                print(f"supported_indices[{i}] = {idx}")
+
             print(f"Length of supported_indices = {supported_indices.__len__()}")
             sanitized_evs = []
             for i in range(k):
