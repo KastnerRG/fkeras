@@ -415,6 +415,7 @@ class HessianMetrics:
 
         for i, layer in enumerate(self.model.layers):
             print(f"Layer[{i:02}] Class = {layer.__class__.__name__}")
+            print(f"Layer[{i:02}] len of get_weights() = {layer.get_weights().__len__()}")
 
 
 
