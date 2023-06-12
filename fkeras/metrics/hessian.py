@@ -413,6 +413,11 @@ class HessianMetrics:
         print(f"Length of self.layer_indices = {self.layer_indices.__len__()}")
         print(f"Length of self.model.layers  = {self.model.layers.__len__()}")
 
+        for i, layer in enumerate(self.model.layers):
+            print(f"Layer[{i:02}] Class = {layer.__class__.__name__}")
+
+
+
         for i, p in enumerate(params):
             print(f"params[{i}] = {p.shape}")
 
@@ -454,6 +459,8 @@ class HessianMetrics:
             supported_indices = []
             for i in self.layer_indices:
                 if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
+                # if self.model.layers[i].get_weights().__len__() == 1:
+
                     supported_indices.append(i)
 
             for i, idx in enumerate(supported_indices):
