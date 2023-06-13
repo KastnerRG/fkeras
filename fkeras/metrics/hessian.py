@@ -322,7 +322,7 @@ class HessianMetrics:
                     else:
                         eigenvalue = tmp_eigenvalue
             eigenvalues.append(eigenvalue)
-            eigenvectors.append(np.array(v))
+            eigenvectors.append(np.array(v, dtype=object))
         
         if not rank_BN:
             supported_indices = self.get_supported_layer_indices()
@@ -333,7 +333,7 @@ class HessianMetrics:
                 for j in range(len(eigenvectors[i])):
                     if j in supported_indices:
                         curr_evs.append(np.array(eigenvectors[i][j]))
-                sanitized_evs.append(np.array(curr_evs))
+                sanitized_evs.append(np.array(curr_evs, dtype=object))
             
             eigenvectors = sanitized_evs
 
@@ -528,7 +528,7 @@ class HessianMetrics:
     
         return param_ranking, param_scores
 
-    def layer_gradient_ranking(self):
+    def gradient_ranking_hack_OLD_CODE(self):
         """
         Rank parameters based on gradient magnitude per layer
         """
@@ -563,10 +563,47 @@ class HessianMetrics:
             break  # Compute for encoder only
         return grad_ranking, grad_dict
     
-    def layer_gradient_ranking_general(self):
+    def gradient_ranking_hack(self, super_layer_idx=0):
         """
         Rank parameters based on gradient magnitude per layer
         """
+        #TODO: Consider implementing gradient ranking in batches?
+        # Get all parameters of the model and flatten and concat into one list
+        layer_indices = self.get_layers_with_trainable_params(
+            self.model.layers[super_layer_idx]
+        )
+        params = [
+            v
+            for i in layer_indices
+            for v in self.model.layers[super_layer_idx].layers[i].trainable_variables
+        ]
+        
+        # Calculate grads over all params
+        with tf.GradientTape() as inner_tape:
+            loss = self.loss_fn(self.model(self.x), self.y)
+            grads = inner_tape.gradient(loss, params)
+        grads = np.array(grads, dtype=object)
+
+        # Flatten grads
+        flattened_grads = list()
+        for g in grads:
+            # print(f"grad shape: {g.shape}")
+            flattened_grads.extend(g.flatten())
+        grads = np.array(flattened_grads)
+
+        # Compute ranking and rank score
+        # print(f"flat grads shape: {grads.shape}")
+        param_ranking = np.flip(np.argsort(np.abs(grads)))
+        param_rank_score = grads[param_ranking]
+        # print(f"grad parameter_ranking: {param_ranking[:10]}")
+        
+        return param_ranking, param_rank_score
+
+    def gradient_ranking(self):
+        """
+        Rank parameters based on gradient magnitude per layer
+        """
+        #TODO: Consider implementing gradient ranking in batches?
         # Get all parameters of the model and flatten and concat into one list
         params = [
             v
@@ -604,5 +641,3 @@ class HessianMetrics:
         # print(f"grad parameter_ranking: {param_ranking[:10]}")
         
         return param_ranking, param_rank_score
-
-
