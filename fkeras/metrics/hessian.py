@@ -44,6 +44,16 @@ class HessianMetrics:
                 layer_indices.append(i)
         return layer_indices
 
+    def get_supported_layer_indices(self):
+        # Get indices of parameters in supported layers
+        supported_indices = []
+        running_idx = 0
+        for i in self.layer_indices:
+            if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
+                supported_indices.append(running_idx)
+            running_idx += self.model.layers[i].trainable_variables.__len__()
+        return supported_indices 
+
     def hessian_vector_product(self, v):
         """
         Compute the Hessian vector product of Hv, where
@@ -313,12 +323,7 @@ class HessianMetrics:
             eigenvectors.append(np.array(v))
         
         if not rank_BN:
-            supported_indices = []
-            running_idx = 0
-            for i in self.layer_indices:
-                if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
-                    supported_indices.append(running_idx)
-                running_idx += self.model.layers[i].trainable_variables.__len__()
+            supported_indices = self.get_supported_layer_indices()
 
             sanitized_evs = []
             for i in range(k):
@@ -495,12 +500,7 @@ class HessianMetrics:
         ]
 
         # Get indices of parameters in supported layers
-        supported_indices = []
-        running_idx = 0
-        for i in self.layer_indices:
-            if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
-                supported_indices.append(running_idx)
-            running_idx += self.model.layers[i].trainable_variables.__len__()
+        supported_indices = self.get_supported_layer_indices()
 
         # Sanitize params (i.e., remove any params from unsupported layers)
         sanitized_params = list()
@@ -565,33 +565,38 @@ class HessianMetrics:
         """
         Rank parameters based on gradient magnitude per layer
         """
-        grad_ranking = []
-        grad_scores  = []
-        #grad_dict = {}
-        # for sl_i in self.layer_indices:
-        #     super_layer = self.model.layers[sl_i]
-        for l_i in self.layer_indices:
-            layer_name = self.model.layers[l_i].name
-            print(f"Gradient ranking by sensitivity for layer {layer_name}")
-            # Compute gradient ranking
-            with tf.GradientTape() as inner_tape:
-                loss = self.loss_fn(self.model(self.x), self.y)
-                params = (
-                    self.model.trainable_variables
-                    if l_i is None
-                    else self.model.layers[l_i].trainable_variables
-                )
-                grads = inner_tape.gradient(loss, params)
-            grads = grads[0].numpy()
-            #grad_dict[layer_name] = grads
-            print(f"grads shape: {grads.shape}")
-            grads = grads.flatten()
-            print(f"flat grads shape: {grads.shape}")
-            param_ranking = np.flip(np.argsort(np.abs(grads)))
-            param_rank_score = grads[param_ranking]
-            print(f"grad parameter_ranking: {param_ranking[:10]}")
-            
-            grad_ranking += [param_ranking[i] for i in range(len(param_ranking))]
-            grad_scores += [param_rank_score[i] for i in range(len(param_ranking))]
+        # Get all parameters of the model and flatten and concat into one list
+        params = [
+            v
+            for i in self.layer_indices
+            for v in self.model.layers[i].trainable_variables
+        ]
 
-        return grad_ranking, grad_scores #, grad_dict
+        # Get indices of parameters in supported layers
+        supported_indices = self.get_supported_layer_indices()
+        
+        # Calculate grads over all params
+        with tf.GradientTape() as inner_tape:
+            loss = self.loss_fn(self.model(self.x), self.y)
+            grads = inner_tape.gradient(loss, params)
+        grads = grads[0].numpy()
+        print(f"grads shape (original): {grads.shape}")
+
+        # Sanitize grads (i.e., remove any grads from unsupported layers)
+        sanitized_grads = list()
+        for i in range(len(grads)):
+            if i in supported_indices:
+                sanitized_grads.append(np.array(grads[i]))
+        grads = sanitized_grads
+        print(f"grads shape (sanitized): {grads.shape}")
+
+        # Compute ranking and rank score
+        grads = grads.flatten()
+        print(f"flat grads shape: {grads.shape}")
+        param_ranking = np.flip(np.argsort(np.abs(grads)))
+        param_rank_score = grads[param_ranking]
+        print(f"grad parameter_ranking: {param_ranking[:10]}")
+        
+        return param_ranking, param_rank_score
+
+
