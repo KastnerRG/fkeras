@@ -574,7 +574,7 @@ class HessianMetrics:
             super_layer = self.model.layers[sl_i]
             for l_i in self.get_layers_with_trainable_params(super_layer):
                 params.append(  # Weights only
-                    self.model.layers[sl_i].layers[l_i].trainable_variables[0].numpy()
+                    self.model.layers[sl_i].layers[l_i].trainable_variables[0]
                 )
             break  # Compute for encoder only
         
