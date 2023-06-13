@@ -601,7 +601,7 @@ class HessianMetrics:
         for g in grads:
             print(f"grad shape: {g.shape}")
             flattened_grads += g.flatten()
-        grads = flattened_grads
+        grads = np.array(flattened_grads)
 
         print(f"flat grads shape: {grads.shape}")
         param_ranking = np.flip(np.argsort(np.abs(grads)))
