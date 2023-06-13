@@ -587,7 +587,7 @@ class HessianMetrics:
         for i in range(len(grads)):
             if i in supported_indices:
                 sanitized_grads.append(np.array(grads[i]))
-        grads = sanitized_grads
+        grads = np.array(sanitized_grads)
         print(f"grads shape (sanitized): {grads.shape}")
 
         # Compute ranking and rank score
