@@ -569,14 +569,14 @@ class HessianMetrics:
         """
         #TODO: Consider implementing gradient ranking in batches?
         # Get all parameters of the model and flatten and concat into one list
-        layer_indices = self.get_layers_with_trainable_params(
-            self.model.layers[super_layer_idx]
-        )
-        params = [
-            v
-            for i in layer_indices
-            for v in self.model.layers[super_layer_idx].layers[i].trainable_variables
-        ]
+        params = []
+        for sl_i in self.layer_indices:
+            super_layer = self.model.layers[sl_i]
+            for l_i in self.get_layers_with_trainable_params(super_layer):
+                params.append(  # Weights only
+                    self.model.layers[sl_i].layers[l_i].trainable_variables[0].numpy()
+                )
+            break  # Compute for encoder only
         
         # Calculate grads over all params
         with tf.GradientTape() as inner_tape:
