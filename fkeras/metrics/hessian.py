@@ -595,7 +595,13 @@ class HessianMetrics:
         # Compute ranking and rank score
         # print(grads)
         # grads = grads.flatten()
-        grads = np.array(list(chain.from_iterable(chain.from_iterable(grads))))
+        # grads = np.array(list(chain.from_iterable(chain.from_iterable(grads))))
+
+        flattened_grads = list()
+        for g in grads:
+            print(f"grad shape: {g.shape}")
+            flattened_grads += g.flatten()
+        grads = flattened_grads
 
         print(f"flat grads shape: {grads.shape}")
         param_ranking = np.flip(np.argsort(np.abs(grads)))
