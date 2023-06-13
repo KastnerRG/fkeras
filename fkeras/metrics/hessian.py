@@ -581,32 +581,27 @@ class HessianMetrics:
         with tf.GradientTape() as inner_tape:
             loss = self.loss_fn(self.model(self.x), self.y)
             grads = inner_tape.gradient(loss, params)
-        grads = np.array(grads)
-        print(f"grads shape (original): {grads.shape}")
+        grads = np.array(grads, dtype=object)
 
         # Sanitize grads (i.e., remove any grads from unsupported layers)
         sanitized_grads = list()
         for i in range(len(grads)):
             if i in supported_indices:
                 sanitized_grads.append(np.array(grads[i]))
-        grads = np.array(sanitized_grads)
-        print(f"grads shape (sanitized): {grads.shape}")
+        grads = np.array(sanitized_grads, dtype=object)
 
-        # Compute ranking and rank score
-        # print(grads)
-        # grads = grads.flatten()
-        # grads = np.array(list(chain.from_iterable(chain.from_iterable(grads))))
-
+        # Flatten grads
         flattened_grads = list()
         for g in grads:
-            print(f"grad shape: {g.shape}")
+            # print(f"grad shape: {g.shape}")
             flattened_grads.extend(g.flatten())
         grads = np.array(flattened_grads)
 
-        print(f"flat grads shape: {grads.shape}")
+        # Compute ranking and rank score
+        # print(f"flat grads shape: {grads.shape}")
         param_ranking = np.flip(np.argsort(np.abs(grads)))
         param_rank_score = grads[param_ranking]
-        print(f"grad parameter_ranking: {param_ranking[:10]}")
+        # print(f"grad parameter_ranking: {param_ranking[:10]}")
         
         return param_ranking, param_rank_score
 
