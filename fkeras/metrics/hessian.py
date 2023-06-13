@@ -6,6 +6,8 @@ from tensorflow.python.ops import gradients
 
 from ..fmodel import SUPPORTED_LAYERS
 
+from itertools import chain
+
 
 class HessianMetrics:
     """
@@ -591,8 +593,10 @@ class HessianMetrics:
         print(f"grads shape (sanitized): {grads.shape}")
 
         # Compute ranking and rank score
-        print(grads)
-        grads = grads.flatten()
+        # print(grads)
+        # grads = grads.flatten()
+        grads = np.array(list(chain.from_iterable(chain.from_iterable(grads))))
+
         print(f"flat grads shape: {grads.shape}")
         param_ranking = np.flip(np.argsort(np.abs(grads)))
         param_rank_score = grads[param_ranking]
