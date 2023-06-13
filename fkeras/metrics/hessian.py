@@ -579,7 +579,7 @@ class HessianMetrics:
         with tf.GradientTape() as inner_tape:
             loss = self.loss_fn(self.model(self.x), self.y)
             grads = inner_tape.gradient(loss, params)
-        grads = grads.numpy()
+        grads = np.array(grads)
         print(f"grads shape (original): {grads.shape}")
 
         # Sanitize grads (i.e., remove any grads from unsupported layers)
