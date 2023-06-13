@@ -463,30 +463,6 @@ class HessianMetrics:
                     supported_indices.append(running_idx)
                 running_idx += self.model.layers[i].trainable_variables.__len__()
 
-            
-#########
-            # supported_indices = []
-            # for i, layer_with_tp_idx in enumerate(self.layer_indices):
-            #     layer_with_tp = self.model.layers[layer_with_tp_idx]
-
-            #     is_supported_layer = layer_with_tp.__class__.__name__ in SUPPORTED_LAYERS
-            #     if is_supported_layer:
-                    
-            #         has_bias = layer_with_tp.get_weights().__len__() > 1
-            #         if has_bias:
-            #             supported_indices.append( (layer_with_tp_idx, i) )
-            #         else:
-
-
-
-
-
-
-#########
-
-
-
-
             for i, idx in enumerate(supported_indices):
                 print(f"supported_indices[{i}] = {idx}")
 
@@ -753,12 +729,30 @@ class HessianMetrics:
             for i in self.layer_indices
             for v in self.model.layers[i].trainable_variables
         ]
-        sanitized_params = list()
-        for j in range(len(params)):
-            if np.array(params[j]).size > 32:
-                sanitized_params.append(np.array(params[j]))
+        # sanitized_params = list()
+        # for j in range(len(params)):
+        #     if np.array(params[j]).size > 32:
+        #         sanitized_params.append(np.array(params[j]))
 
-                print(f"sanitized param = {np.array(params[j]).shape}")
+        #         print(f"sanitized param = {np.array(params[j]).shape}")
+
+###################
+        supported_indices = []
+        running_idx = 0
+        for i in self.layer_indices:
+            if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
+                supported_indices.append(running_idx)
+            running_idx += self.model.layers[i].trainable_variables.__len__()
+
+        for i, idx in enumerate(supported_indices):
+            print(f"supported_indices[{i}] = {idx}")
+
+        sanitized_params = list()
+        for i in range(len(params)):
+            if i in supported_indices:
+                sanitized_params.append(np.array(params[i]))
+                print(f"sanitized param = {np.array(params[i]).shape}")
+###################
         params = sanitized_params
 
         # Flatten and concatenate all eigenvectors into one list
