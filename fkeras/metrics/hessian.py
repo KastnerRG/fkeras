@@ -588,7 +588,7 @@ class HessianMetrics:
         flattened_grads = list()
         for g in grads:
             # print(f"grad shape: {g.shape}")
-            flattened_grads.extend(g.flatten())
+            flattened_grads.extend(np.array(g).flatten())
         grads = np.array(flattened_grads)
 
         # Compute ranking and rank score
