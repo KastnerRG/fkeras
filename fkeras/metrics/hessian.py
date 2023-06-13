@@ -591,6 +591,7 @@ class HessianMetrics:
         print(f"grads shape (sanitized): {grads.shape}")
 
         # Compute ranking and rank score
+        print(grads)
         grads = grads.flatten()
         print(f"flat grads shape: {grads.shape}")
         param_ranking = np.flip(np.argsort(np.abs(grads)))
