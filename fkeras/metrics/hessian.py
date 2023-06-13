@@ -44,67 +44,6 @@ class HessianMetrics:
                 layer_indices.append(i)
         return layer_indices
 
-    # def hessian_vector_product(self, v, layer_idx=None):
-    #     """
-    #     Compute the Hessian vector product of Hv, where
-    #     H is the Hessian of the loss function with respect to the model parameters
-    #     v is a vector of the same size as the model parameters
-
-    #     Based on: https://github.com/tensorflow/tensorflow/blob/47f0e99c1918f68daa84bd4cac1b6011b2942dac/tensorflow/python/eager/benchmarks/resnet50/hvp_test.py#L62
-    #     """
-    #     # Compute the gradients of the loss function with respect to the model parameters
-
-    #     with tf.GradientTape() as outer_tape:
-    #         with tf.GradientTape() as inner_tape:
-    #             loss = self.loss_fn(self.model(self.x), self.y)
-    #         # params = self.model.trainable_variables if layer_idx is None else self.model.layers[layer_idx].trainable_variables
-    #         # tf.print(f"\n\n##{self.model.trainable_variables}##\n\n")
-    #         params = (
-    #             self.model.trainable_variables
-    #             if layer_idx is None
-    #             else self.model.trainable_variables[layer_idx]
-    #         )
-    #         grads = inner_tape.gradient(loss, params)
-    #     # Compute the Hessian vector product
-    #     return outer_tape.gradient(grads, params, output_gradients=v)
-
-    def layer_hessian_vector_product_hack(
-        self, v, super_layer_idx=None, layer_idx=None
-    ):
-        """
-        Compute the Hessian vector product of Hv for a given layer, where
-        H is the Hessian of the loss function with respect to the model parameters
-        v is a vector of the same size as the model parameters
-
-        Based on: https://github.com/tensorflow/tensorflow/blob/47f0e99c1918f68daa84bd4cac1b6011b2942dac/tensorflow/python/eager/benchmarks/resnet50/hvp_test.py#L62
-        """
-        # Compute the gradients of the loss function with respect to the model parameters
-        params = (
-            self.model.trainable_variables
-            if layer_idx is None
-            else self.model.layers[super_layer_idx]
-            .layers[layer_idx]
-            .trainable_variables
-        )
-        num_data = 0
-        temp_hv = [tf.zeros_like(p) for p in params]
-        for batch_x, batch_y in zip(self.batched_x, self.batched_y):
-            with tf.GradientTape() as outer_tape:
-                with tf.GradientTape() as inner_tape:
-                    loss = self.loss_fn(self.model(batch_x), batch_y)
-                    grads = inner_tape.gradient(loss, params)
-                hv = outer_tape.gradient(grads, params, output_gradients=v)
-            num_data += len(batch_x)
-            temp_hv = [
-                THv1 + Hv1 * float(len(batch_x)) for THv1, Hv1 in zip(temp_hv, hv)
-            ]
-        temp_hv = [THv1 / float(num_data) for THv1 in temp_hv]
-        eigenvalue = tf.reduce_sum(
-            [tf.reduce_sum(THv1 * v1) for THv1, v1 in zip(temp_hv, v)]
-        )
-        # Compute the Hessian vector product
-        return temp_hv, eigenvalue
-
     def hessian_vector_product(self, v):
         """
         Compute the Hessian vector product of Hv, where
@@ -273,75 +212,6 @@ class HessianMetrics:
         s = s**0.5
         return [v / (s + 1e-6) for v in v_list]
 
-    def layer_top_k_eigenvalues_hack(self, k=1, max_iter=100, tolerance=1e-3):
-        """
-        Compute the top k eigenvalues and eigenvectors of the Hessian using the
-        power iteration method per layer. The eigenvalues are sorted in
-        descending order.
-        k: number of eigenvalues to compute
-        max_iter: maximum number of iterations used to compute eigenvalues
-        tolerance: tolerance for convergence
-        """
-        layer_eigenvalues = {}
-        layer_eigenvectors = {}
-        for sl_i in self.layer_indices:
-            super_layer = self.model.layers[sl_i]
-            # tf.print(f"\n\n#########HessianDebug{self.get_layers_with_trainable_params(super_layer)}#########\n\n")
-            for l_i in self.get_layers_with_trainable_params(super_layer):
-                layer_name = self.model.layers[sl_i].layers[l_i].name
-                print(f"Computing top {k} eigenvalues for layer {layer_name}")
-                eigenvalues = []
-                eigenvectors = []
-                for i in range(k):
-                    eigenvalue = None
-                    # Initialize the eigenvector
-                    v = [
-                        np.random.uniform(
-                            size=self.model.layers[sl_i]
-                            .layers[l_i]
-                            .trainable_variables[i]
-                            .shape
-                        )
-                        for i in range(
-                            len(self.model.layers[sl_i].layers[l_i].trainable_variables)
-                        )
-                    ]
-                    v = [tf.convert_to_tensor(vi, dtype=tf.dtypes.float32) for vi in v]
-                    # Normalize the eigenvector
-                    # v = [vi / tf.norm(vi) for vi in v]
-                    v = self.normalize_vector_list(v)
-                    for j in range(max_iter):
-                        # Make v orthonormal to eigenvectors
-                        for ei in eigenvectors:
-                            v = [
-                                vi - tf.reduce_sum(vi * e) * e for (vi, e) in zip(v, ei)
-                            ]
-                        # v = [vi / tf.norm(vi) for vi in v]
-                        v = self.normalize_vector_list(v)
-                        # Compute the Hessian vector product
-                        hv, tmp_eigenvalue = self.layer_hessian_vector_product_hack(
-                            v, super_layer_idx=sl_i, layer_idx=l_i
-                        )
-                        # Normalize the eigenvector
-                        # v = [vi / tf.norm(vi) for vi in hv]
-                        v = self.normalize_vector_list(hv)
-                        if eigenvalue is None:
-                            eigenvalue = tmp_eigenvalue
-                        else:
-                            if (
-                                abs(tmp_eigenvalue - eigenvalue)
-                                / (abs(eigenvalue) + 1e-6)
-                                < tolerance
-                            ):
-                                break
-                            else:
-                                eigenvalue = tmp_eigenvalue
-                    eigenvalues.append(eigenvalue)
-                    eigenvectors.append(v)
-                layer_eigenvalues[layer_name] = eigenvalues
-                layer_eigenvectors[layer_name] = eigenvectors
-            break  # Compute for encoder only
-        return layer_eigenvalues, layer_eigenvectors
 
     def top_k_eigenvalues_hack(self, k=1, max_iter=100, tolerance=1e-3):
         """
@@ -410,19 +280,6 @@ class HessianMetrics:
             for v in self.model.layers[i].trainable_variables
         ]
 
-        print(f"Length of self.layer_indices = {self.layer_indices.__len__()}")
-        print(f"Length of self.model.layers  = {self.model.layers.__len__()}")
-
-        for i, layer in enumerate(self.model.layers):
-            print(f"Layer[{i:02}] Class = {layer.__class__.__name__}")
-            print(f"Layer[{i:02}] len of get_weights() = {layer.get_weights().__len__()}")
-            print(f"Layer[{i:02}] len of trainable_variables = {layer.trainable_variables.__len__()}")
-
-
-
-        for i, p in enumerate(params):
-            print(f"params[{i}] = {p.shape}")
-
         eigenvalues = []
         eigenvectors = []
         
@@ -463,87 +320,17 @@ class HessianMetrics:
                     supported_indices.append(running_idx)
                 running_idx += self.model.layers[i].trainable_variables.__len__()
 
-            for i, idx in enumerate(supported_indices):
-                print(f"supported_indices[{i}] = {idx}")
-
-            print(f"Length of supported_indices = {supported_indices.__len__()}")
             sanitized_evs = []
             for i in range(k):
                 curr_evs = []
-                print(f"Length of eigenvectors[i] = {eigenvectors[i].__len__()}")
                 for j in range(len(eigenvectors[i])):
-                    # if np.array(eigenvectors[i][j]).size > 32:
                     if j in supported_indices:
                         curr_evs.append(np.array(eigenvectors[i][j]))
                 sanitized_evs.append(np.array(curr_evs))
             
-            print(f"len of sanitized_evs[0] = {sanitized_evs[0].__len__()}")
             eigenvectors = sanitized_evs
 
         return eigenvalues, eigenvectors
-
-
-    def layer_hessian_ranking(self, layer_eigenvectors, layer_eigenvalues=None, k=1):
-        """
-        Use the top eigenvalues and eigenvectors of the hessian to rank the
-        parameters based on sensitivity to bit flips. To do so, we:
-            1. Retrieve the top eigenvalues and eigenvectors of the Hessian
-            2. Compute sensitivity ranking by taking the inner product of the
-               top k eigenvectors with the parameters and then we are left with
-               k scalars which we can use to rank the parameters. In this sense,
-               the parameters that get scaled the most by the k-th eigenvector
-               are associated with rank k. Ex: paraemeters X, Y, and Z are
-               scaled the most by the top 1 eigenvector, so those parameters
-               are ranked the top 1 most sensitive to bit flips.
-        NOTE: We can try different combinations of how to balance the
-        "eigenvalue ranking" and the "importance-in-each-eigenvector" scores and
-        give a design. Here we are restricted to just one dimension of the
-        eigenvector, so there is some freedom to design it.
-        """
-        # Compute sensitivity ranking
-        # TODO: Provide bit-level ranking based on qkeras layer quantizer info
-        # and log2
-        sensitivity_ranking = {}
-        for sl_i in self.layer_indices:
-            super_layer = self.model.layers[sl_i]
-            for l_i in self.get_layers_with_trainable_params(super_layer):
-                layer_name = self.model.layers[sl_i].layers[l_i].name
-                print(f"Ranking by sensitivity for layer {layer_name}")
-                # Compute ranking for kth eigenvector
-                combined_eigenvector_score = np.zeros(
-                    layer_eigenvectors[layer_name][0][0].numpy().size
-                )
-                for i in range(k):
-                    # Get eigenvector for weights only (ignore biases)
-                    curr_eigenvector = layer_eigenvectors[layer_name][i][0]
-                    curr_eigenvector = curr_eigenvector.numpy()
-                    curr_eigenvector = curr_eigenvector.flatten()
-                    if layer_eigenvalues:
-                        curr_eigenvalue = layer_eigenvalues[layer_name][i].numpy()
-                        print(f"{i}th eigenvalue: {curr_eigenvalue}")
-                        curr_eigenvector = curr_eigenvector * curr_eigenvalue
-                    params = (
-                        self.model.layers[sl_i]
-                        .layers[l_i]
-                        .trainable_variables[0]
-                        .numpy()
-                    )
-                    params = params.flatten()
-                    # Compute dot product of eigenvector with this layer's
-                    # params to get overall ranking and then sort params based
-                    # on eigenvector values to get ranking within the overall
-                    # ranking
-                    scalar_rank = np.dot(curr_eigenvector, params)
-                    combined_eigenvector_score += np.abs(scalar_rank * curr_eigenvector)
-                param_ranking = np.flip(np.argsort(np.abs(combined_eigenvector_score)))
-                param_rank_score = combined_eigenvector_score[param_ranking]
-                print(f"parameter_ranking: {param_ranking[:10]}")
-                sensitivity_ranking[layer_name] = [
-                    (param_ranking[i], param_rank_score[i])
-                    for i in range(len(param_ranking))
-                ]
-            break  # Compute for encoder only
-        return sensitivity_ranking
 
     def do_sum_hessian_rank(self, params, eigenvectors, eigenvalues, k, iter_by=2):
         """
@@ -685,7 +472,7 @@ class HessianMetrics:
         bit_level_rank = self.sort_bits_MSB_to_LSB(bit_level_rank, num_bits)
         return bit_level_rank
 
-    def hessian_ranking(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
+    def hessian_ranking_hack(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
         """
         Given list of eigenvectors and eigenvalues, compute the sensitivity.
         Use Hessian to rank parameters based on sensitivity to bit flips with
@@ -729,14 +516,8 @@ class HessianMetrics:
             for i in self.layer_indices
             for v in self.model.layers[i].trainable_variables
         ]
-        # sanitized_params = list()
-        # for j in range(len(params)):
-        #     if np.array(params[j]).size > 32:
-        #         sanitized_params.append(np.array(params[j]))
 
-        #         print(f"sanitized param = {np.array(params[j]).shape}")
-
-###################
+        # Get indices of parameters in supported layers
         supported_indices = []
         running_idx = 0
         for i in self.layer_indices:
@@ -744,23 +525,19 @@ class HessianMetrics:
                 supported_indices.append(running_idx)
             running_idx += self.model.layers[i].trainable_variables.__len__()
 
-        for i, idx in enumerate(supported_indices):
-            print(f"supported_indices[{i}] = {idx}")
-
+        # Sanitize params (i.e., remove any params from unsupported layers)
         sanitized_params = list()
         for i in range(len(params)):
             if i in supported_indices:
                 sanitized_params.append(np.array(params[i]))
-                print(f"sanitized param = {np.array(params[i]).shape}")
-###################
         params = sanitized_params
 
         # Flatten and concatenate all eigenvectors into one list
         params = np.concatenate(params, axis=None)
         params = params.flatten()
-        print(f"params shape: {params.shape}")
+        # print(f"params shape: {params.shape}")
         if strategy == "sum":
-            eigenvector_rank = self.do_sum_hessian_rank_general(
+            eigenvector_rank = self.do_sum_hessian_rank(
                 params, eigenvectors, eigenvalues, k, iter_by=iter_by
             )
         elif strategy == "max":
@@ -769,7 +546,7 @@ class HessianMetrics:
             )
         param_ranking = np.flip(np.argsort(np.abs(eigenvector_rank)))
         param_scores = eigenvector_rank[param_ranking]
-        print(f"parameter_ranking: {param_ranking[:15]}")
+    
         return param_ranking, param_scores
 
     def layer_gradient_ranking(self):
