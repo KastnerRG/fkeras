@@ -17,7 +17,7 @@ class HessianMetrics:
         - The trace of the Hessian
     """
 
-    def __init__(self, model, loss_fn, x, y, batch_size=32):
+    def __init__(self, model, loss_fn, x, y, batch_size=32, layer_precision_info=None):
         """
         model: Keras model
         loss_fn: loss function
@@ -34,6 +34,7 @@ class HessianMetrics:
         self.batched_x = tf.data.Dataset.from_tensor_slices(x).batch(batch_size)
         self.batched_y = tf.data.Dataset.from_tensor_slices(y).batch(batch_size)
         self.layer_indices = self.get_layers_with_trainable_params(model)
+        self.layer_precision_info = layer_precision_info
         np.random.seed(83158011)
 
     def get_layers_with_trainable_params(self, model):
@@ -442,7 +443,67 @@ class HessianMetrics:
 
         return np.array(bit_rank)
 
-    def convert_param_ranking_to_msb_bit_ranking(self, param_ranking, num_bits):
+###############################
+    def get_wi(i_bi, i_bw):
+        return int(i_bi/i_bw)
+
+    def get_wbi(i_bi, i_bw):
+        return int(i_bi%i_bw)
+
+    def get_wi_wbi(i_bi, i_bw):
+        return get_wi(i_bi, i_bw), get_wbi(i_bi, i_bw)
+
+    def get_bi_to_wi_wbi_dict(i_layer_info):
+        bi_to_wi_wbi = dict()
+        prev_wi = 0
+        prev_bi = 0
+        for layer_num_weights, layer_bit_width in i_layer_info:
+            layer_bits = layer_num_weights * layer_bit_width
+            for bi in range(layer_bits):
+                wi, wbi = get_wi_wbi(bi, layer_bit_width)
+
+                bi_to_wi_wbi[bi+prev_bi] = (wi+prev_wi, wbi)
+
+            prev_wi += layer_num_weights
+            prev_bi += layer_bits
+        
+        return bi_to_wi_wbi
+    
+    def convert_param_ranking_to_msb_bit_ranking_mixed_precision(self, param_ranking):
+        # Convert param ranking to bit ranking
+        bit_level_rank = []
+        
+        num_bits_dict = dict()
+        last_num_weights = 0
+        for layer_num_weights, layer_bit_width in self.layer_precision_info:
+            num_bits_dict[(last_num_weights, layer_num_weights+last_num_weights)] = layer_bit_width
+            last_num_weights = layer_num_weights
+
+        max_bit_width = max(self.layer_precision_info, key=lambda x: x[1])[1]
+        sorted_msb_lsb_lists = [[] for _ in range(max_bit_width)]
+        for param in param_ranking:
+            num_bits = None
+
+            for k,v in num_bits_dict.items():
+                if param >= k[0] and param < k[1]:
+                    num_bits = v
+                    break
+            bit_idx = param * num_bits
+            bit_level_rank.append(bit_idx)
+            sorted_msb_lsb_lists[0].append(bit_idx)
+
+            for j in range(1, num_bits):
+                bit_level_rank.append(bit_idx + j)
+                sorted_msb_lsb_lists[j].append(bit_idx + j)
+        
+        # Merge lists
+        merged_msb_to_lsb_list = []
+        for l in sorted_msb_lsb_lists:
+            merged_msb_to_lsb_list.extend(l)
+
+        return merged_msb_to_lsb_list
+    
+    def convert_param_ranking_to_msb_bit_ranking_single_precision(self, param_ranking, num_bits):
         # Convert param ranking to bit ranking
         bit_level_rank = []
 
@@ -455,6 +516,14 @@ class HessianMetrics:
         # Sort from MSB to LSB
         bit_level_rank = self.sort_bits_MSB_to_LSB(bit_level_rank, num_bits)
         return bit_level_rank
+    
+    def convert_param_ranking_to_msb_bit_ranking(self, param_ranking, num_bits):
+        if self.layer_precision_info == None:
+            return self.convert_param_ranking_to_msb_bit_ranking_single_precision(param_ranking, num_bits)
+        else:
+            return self.convert_param_ranking_to_msb_bit_ranking_mixed_precision(param_ranking)
+###############################
+
 
     def hessian_ranking_hack(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
         """
