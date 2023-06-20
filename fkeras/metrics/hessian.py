@@ -55,7 +55,7 @@ class HessianMetrics:
             if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
                 supported_indices.append(running_idx)
             running_idx += self.model.layers[i].trainable_variables.__len__()
-        return supported_indices 
+        return supported_indices
 
     def hessian_vector_product(self, v):
         """
@@ -225,7 +225,6 @@ class HessianMetrics:
         s = s**0.5
         return [v / (s + 1e-6) for v in v_list]
 
-
     def top_k_eigenvalues_hack(self, k=1, max_iter=100, tolerance=1e-3):
         """
         Compute the top k eigenvalues and eigenvectors of the Hessian using the
@@ -278,7 +277,6 @@ class HessianMetrics:
             break  # Compute for encoder only
         return eigenvalues, eigenvectors
 
-
     def top_k_eigenvalues(self, k=1, max_iter=100, tolerance=1e-3, rank_BN=True):
         """
         Compute the top k eigenvalues and eigenvectors of the Hessian using the
@@ -295,7 +293,7 @@ class HessianMetrics:
 
         eigenvalues = []
         eigenvectors = []
-        
+
         for _ in range(k):
             eigenvalue = None
             # Initialize the eigenvector
@@ -324,7 +322,7 @@ class HessianMetrics:
                         eigenvalue = tmp_eigenvalue
             eigenvalues.append(eigenvalue)
             eigenvectors.append(np.array(v, dtype=object))
-        
+
         if not rank_BN:
             supported_indices = self.get_supported_layer_indices()
 
@@ -335,7 +333,7 @@ class HessianMetrics:
                     if j in supported_indices:
                         curr_evs.append(np.array(eigenvectors[i][j]))
                 sanitized_evs.append(np.array(curr_evs, dtype=object))
-            
+
             eigenvectors = sanitized_evs
 
         return eigenvalues, eigenvectors
@@ -356,7 +354,7 @@ class HessianMetrics:
             combined_eigenvector = []
             for j in range(0, len(eigenvectors[i]), iter_by):
                 # Go every 2 to ignore biases
-                #TODO: Exception is used due to the inconsistent
+                # TODO: Exception is used due to the inconsistent
                 # usage of numpy arrays and tensorflow tensors.
                 # To be fixed in the future by only using np arrays.
                 try:
@@ -443,67 +441,44 @@ class HessianMetrics:
 
         return np.array(bit_rank)
 
-###############################
-    def get_wi(i_bi, i_bw):
-        return int(i_bi/i_bw)
-
-    def get_wbi(i_bi, i_bw):
-        return int(i_bi%i_bw)
-
-    def get_wi_wbi(i_bi, i_bw):
-        return get_wi(i_bi, i_bw), get_wbi(i_bi, i_bw)
-
-    def get_bi_to_wi_wbi_dict(i_layer_info):
-        bi_to_wi_wbi = dict()
-        prev_wi = 0
-        prev_bi = 0
-        for layer_num_weights, layer_bit_width in i_layer_info:
-            layer_bits = layer_num_weights * layer_bit_width
-            for bi in range(layer_bits):
-                wi, wbi = get_wi_wbi(bi, layer_bit_width)
-
-                bi_to_wi_wbi[bi+prev_bi] = (wi+prev_wi, wbi)
-
-            prev_wi += layer_num_weights
-            prev_bi += layer_bits
-        
-        return bi_to_wi_wbi
-    
+    ###############################
     def convert_param_ranking_to_msb_bit_ranking_mixed_precision(self, param_ranking):
-        # Convert param ranking to bit ranking
-        bit_level_rank = []
-        
-        num_bits_dict = dict()
-        last_num_weights = 0
-        for layer_num_weights, layer_bit_width in self.layer_precision_info:
-            num_bits_dict[(last_num_weights, layer_num_weights+last_num_weights)] = layer_bit_width
-            last_num_weights = layer_num_weights
+        layer_info_head = 0
+        num_of_params_seen = 0
+        last_bit_idx = -1
+        param_to_bit_indices_dict = dict()
+        # Build a dictionary such that (key, val) = param_index, ([bit_indices])
+        for wi in range(len(param_ranking)):
+            bit_indices_associated_with_param = []
+            bit_width = self.layer_precision_info[layer_info_head][1]
+            for wbi in range(bit_width):
+                last_bit_idx += 1
+                bit_indices_associated_with_param.append((last_bit_idx, wbi))
 
+            param_to_bit_indices_dict[wi] = bit_indices_associated_with_param
+
+            num_of_params_seen += 1
+            if num_of_params_seen == self.layer_precision_info[layer_info_head][0]:
+                layer_info_head += 1
+                num_of_params_seen = 0
+
+        # Add the bit indices into the appropriate list based on
+        # the parameter ranking
         max_bit_width = max(self.layer_precision_info, key=lambda x: x[1])[1]
         sorted_msb_lsb_lists = [[] for _ in range(max_bit_width)]
-        for param in param_ranking:
-            num_bits = None
+        for param_idx in param_ranking:
+            for bit_idx, wbi in param_to_bit_indices_dict[param_idx]:
+                sorted_msb_lsb_lists[wbi].append(bit_idx)
 
-            for k,v in num_bits_dict.items():
-                if param >= k[0] and param < k[1]:
-                    num_bits = v
-                    break
-            bit_idx = param * num_bits
-            bit_level_rank.append(bit_idx)
-            sorted_msb_lsb_lists[0].append(bit_idx)
-
-            for j in range(1, num_bits):
-                bit_level_rank.append(bit_idx + j)
-                sorted_msb_lsb_lists[j].append(bit_idx + j)
-        
-        # Merge lists
         merged_msb_to_lsb_list = []
         for l in sorted_msb_lsb_lists:
             merged_msb_to_lsb_list.extend(l)
 
         return merged_msb_to_lsb_list
-    
-    def convert_param_ranking_to_msb_bit_ranking_single_precision(self, param_ranking, num_bits):
+
+    def convert_param_ranking_to_msb_bit_ranking_single_precision(
+        self, param_ranking, num_bits
+    ):
         # Convert param ranking to bit ranking
         bit_level_rank = []
 
@@ -516,14 +491,18 @@ class HessianMetrics:
         # Sort from MSB to LSB
         bit_level_rank = self.sort_bits_MSB_to_LSB(bit_level_rank, num_bits)
         return bit_level_rank
-    
+
     def convert_param_ranking_to_msb_bit_ranking(self, param_ranking, num_bits):
         if self.layer_precision_info == None:
-            return self.convert_param_ranking_to_msb_bit_ranking_single_precision(param_ranking, num_bits)
+            return self.convert_param_ranking_to_msb_bit_ranking_single_precision(
+                param_ranking, num_bits
+            )
         else:
-            return self.convert_param_ranking_to_msb_bit_ranking_mixed_precision(param_ranking)
-###############################
+            return self.convert_param_ranking_to_msb_bit_ranking_mixed_precision(
+                param_ranking
+            )
 
+    ###############################
 
     def hessian_ranking_hack(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
         """
@@ -556,8 +535,10 @@ class HessianMetrics:
         param_scores = eigenvector_rank[param_ranking]
         print(f"parameter_ranking: {param_ranking[:15]}")
         return param_ranking, param_scores
-    
-    def hessian_ranking_general(self, eigenvectors, eigenvalues=None, k=1, strategy="sum", iter_by=1):
+
+    def hessian_ranking_general(
+        self, eigenvectors, eigenvalues=None, k=1, strategy="sum", iter_by=1
+    ):
         """
         Given list of eigenvectors and eigenvalues, compute the sensitivity.
         Use Hessian to rank parameters based on sensitivity to bit flips with
@@ -594,7 +575,7 @@ class HessianMetrics:
             )
         param_ranking = np.flip(np.argsort(np.abs(eigenvector_rank)))
         param_scores = eigenvector_rank[param_ranking]
-    
+
         return param_ranking, param_scores
 
     def gradient_ranking_hack_OLD_CODE(self):
@@ -631,12 +612,12 @@ class HessianMetrics:
                 ]
             break  # Compute for encoder only
         return grad_ranking, grad_dict
-    
+
     def gradient_ranking_hack(self, super_layer_idx=0):
         """
         Rank parameters based on gradient magnitude per layer
         """
-        #TODO: Consider implementing gradient ranking in batches?
+        # TODO: Consider implementing gradient ranking in batches?
         # Get all parameters of the model and flatten and concat into one list
         params = []
         for sl_i in self.layer_indices:
@@ -646,7 +627,7 @@ class HessianMetrics:
                     self.model.layers[sl_i].layers[l_i].trainable_variables[0]
                 )
             break  # Compute for encoder only
-        
+
         # Calculate grads over all params
         with tf.GradientTape() as inner_tape:
             loss = self.loss_fn(self.model(self.x), self.y)
@@ -665,14 +646,14 @@ class HessianMetrics:
         param_ranking = np.flip(np.argsort(np.abs(grads)))
         param_rank_score = grads[param_ranking]
         # print(f"grad parameter_ranking: {param_ranking[:10]}")
-        
+
         return param_ranking, param_rank_score
 
     def gradient_ranking(self):
         """
         Rank parameters based on gradient magnitude per layer
         """
-        #TODO: Consider implementing gradient ranking in batches?
+        # TODO: Consider implementing gradient ranking in batches?
         # Get all parameters of the model and flatten and concat into one list
         params = [
             v
@@ -682,7 +663,7 @@ class HessianMetrics:
 
         # Get indices of parameters in supported layers
         supported_indices = self.get_supported_layer_indices()
-        
+
         # Calculate grads over all params
         with tf.GradientTape() as inner_tape:
             loss = self.loss_fn(self.model(self.x), self.y)
@@ -708,5 +689,5 @@ class HessianMetrics:
         param_ranking = np.flip(np.argsort(np.abs(grads)))
         param_rank_score = grads[param_ranking]
         # print(f"grad parameter_ranking: {param_ranking[:10]}")
-        
+
         return param_ranking, param_rank_score
