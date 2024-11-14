@@ -15,6 +15,7 @@ NON_PARAM_LAYERS = [
     "Flatten",
     "BatchNormalization",
     "Activation",
+    "Add",
 ]
 
 
