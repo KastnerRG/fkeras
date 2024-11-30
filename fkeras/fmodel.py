@@ -20,9 +20,10 @@ NON_PARAM_LAYERS = [
 
 
 class FModel:
-    def __init__(self, model, model_param_ber=0):
+    def __init__(self, model, model_param_ber=0, verbose=0):
         self.model = model
         self.model_param_ber = model_param_ber
+        self.verbose = verbose
         self._set_layer_bit_ranges()
         self._set_model_param_ber()
         # self.layer_bit_ranges = {}
@@ -72,7 +73,8 @@ class FModel:
                 raise NotImplementedError(
                     f"Injecting faults in {layer.__class__.__name__} layer not yet supported."
                 )
-        print(f"[fkeras.fmodel._set_layer_bit_ranges] {self.num_model_param_bits}")
+        if self.verbose > 0:
+            print(f"[fkeras.fmodel._set_layer_bit_ranges] {self.num_model_param_bits}")
 
     def explicit_select_model_param_bitflip(self, bits_to_flip):
         """
@@ -87,9 +89,11 @@ class FModel:
         """
         bits_to_flip_per_layer = defaultdict(int)
         # num_faults = int(self.num_model_param_bits * self.model_param_ber)
-        print(
-            f"[fkeras.fmodel.explicit_select_model_param_bitflip] num_faults = {len(bits_to_flip)}"
-        )
+
+        if self.verbose > 0:
+            print(
+                f"[fkeras.fmodel.explicit_select_model_param_bitflip] num_faults = {len(bits_to_flip)}"
+            )
         # bits_to_flip = random.sample(list(range(self.num_model_param_bits)), num_faults)
         bits_to_flip.sort()
         # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] {bits_to_flip}")
@@ -127,7 +131,8 @@ class FModel:
         """
         bits_to_flip_per_layer = defaultdict(int)
         num_faults = int(self.num_model_param_bits * self.model_param_ber)
-        print(f"num_faults = {num_faults}")
+        if self.verbose > 0:
+            print(f"num_faults = {num_faults}")
         bits_to_flip = random.sample(list(range(self.num_model_param_bits)), num_faults)
         bits_to_flip.sort()
         for bit in bits_to_flip:
