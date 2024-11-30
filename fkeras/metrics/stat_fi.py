@@ -56,8 +56,6 @@ class StatFI:
         e.g., ([param1, param2, ...], [quantizer1, quantizer2, ...]) for layers
         1 and 2.
         """
-
-        # Compute the gradients of the loss function with respect to the model parameters
         params = [
             v.numpy()
             for i in self.layer_indices
