@@ -52,8 +52,14 @@ class HessianMetrics:
         supported_indices = []
         running_idx = 0
         for i in self.layer_indices:
+            print(f"layer: {self.model.layers[i].__class__.__name__}")
             if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
                 supported_indices.append(running_idx)
+                # TODO: also add bias index
+                # supported_indices.append(running_idx + 1)
+            # print(f"len trainable variables: {self.model.layers[i].trainable_variables.__len__()}")
+            # print(f"trainable variables[0] shape: {self.model.layers[i].trainable_variables[0].shape}")
+            # print(f"trainable variables[1] shape: {self.model.layers[i].trainable_variables[1].shape}")
             running_idx += self.model.layers[i].trainable_variables.__len__()
         return supported_indices
 
@@ -325,6 +331,7 @@ class HessianMetrics:
 
         if not rank_BN:
             supported_indices = self.get_supported_layer_indices()
+            print(f"supported_indices: {supported_indices}")
 
             sanitized_evs = []
             for i in range(k):
@@ -661,15 +668,14 @@ class HessianMetrics:
             for v in self.model.layers[i].trainable_variables
         ]
 
-        # Get indices of parameters in supported layers
-        supported_indices = self.get_supported_layer_indices()
-
         # Calculate grads over all params
         with tf.GradientTape() as inner_tape:
             loss = self.loss_fn(self.model(self.x), self.y)
             grads = inner_tape.gradient(loss, params)
         grads = np.array(grads, dtype=object)
 
+        # Get indices of parameters in supported layers
+        supported_indices = self.get_supported_layer_indices()
         # Sanitize grads (i.e., remove any grads from unsupported layers)
         sanitized_grads = list()
         for i in range(len(grads)):
@@ -688,6 +694,58 @@ class HessianMetrics:
         # print(f"flat grads shape: {grads.shape}")
         param_ranking = np.flip(np.argsort(np.abs(grads)))
         param_rank_score = grads[param_ranking]
+        # print(f"grad parameter_ranking: {param_ranking[:10]}")
+
+        return param_ranking, param_rank_score
+    
+
+    def aspis_taylor_ranking(self):
+        """
+        TODO: Needs testing
+        Rank parameters based on (gradient * magnitude)^2 
+
+        Based on: https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=10771492
+        """
+        params = [
+                v
+                for i in self.layer_indices
+                for v in self.model.layers[i].trainable_variables
+            ]
+
+        # Calculate grads over all params
+        with tf.GradientTape() as inner_tape:
+            loss = self.loss_fn(self.model(self.x), self.y)
+            grads = inner_tape.gradient(loss, params)
+        grads = np.array(grads, dtype=object)
+
+        # Get indices of parameters in supported layers
+        supported_indices = self.get_supported_layer_indices()
+        # Sanitize grads (i.e., remove any grads from unsupported layers)
+        sanitized_grads = list()
+        # TODO: Collect santized parameters so that we can multiply them with the gradients
+        sanitized_params = list()
+        for i in range(len(grads)):
+            if i in supported_indices:
+                sanitized_grads.append(np.array(grads[i]))
+                sanitized_params.append(np.array(params[i])) # TODO: Test
+        grads = np.array(sanitized_grads, dtype=object)
+        params = np.array(sanitized_params, dtype=object)
+
+        # Flatten grads & params
+        flattened_grads = list()
+        flattened_params = list()
+        for g in grads:
+            # print(f"grad shape: {g.shape}")
+            flattened_grads.extend(g.flatten())
+            flattened_params.extend(params.flatten())
+        grads = np.array(flattened_grads)
+
+        score = (grads * flattened_params) ** 2
+
+        # Compute ranking and rank score
+        # print(f"score shape: {grads.shape}")
+        param_ranking = np.flip(np.argsort(np.abs(score)))
+        param_rank_score = score[param_ranking]
         # print(f"grad parameter_ranking: {param_ranking[:10]}")
 
         return param_ranking, param_rank_score
