@@ -55,11 +55,12 @@ class HessianMetrics:
             print(f"layer: {self.model.layers[i].__class__.__name__}")
             if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS:
                 supported_indices.append(running_idx)
-                # TODO: also add bias index
-                # supported_indices.append(running_idx + 1)
+                if self.model.layers[i].trainable_variables.__len__() > 1:
+                    # Add bias if it exists
+                    supported_indices.append(running_idx + 1)
             # print(f"len trainable variables: {self.model.layers[i].trainable_variables.__len__()}")
-            # print(f"trainable variables[0] shape: {self.model.layers[i].trainable_variables[0].shape}")
-            # print(f"trainable variables[1] shape: {self.model.layers[i].trainable_variables[1].shape}")
+            print(f"trainable variables[0] shape: {self.model.layers[i].trainable_variables[0].shape}")
+            print(f"trainable variables[1] shape: {self.model.layers[i].trainable_variables[1].shape}")
             running_idx += self.model.layers[i].trainable_variables.__len__()
         return supported_indices
 
@@ -354,7 +355,7 @@ class HessianMetrics:
         parameter sensitivity ranking using weighted sum strategy.
         Return a list of eigenvector/eigenvalue
         scores, one score for each parameter.
-        Curren method: weighted sum of eigenvectors
+        Current method: weighted sum of eigenvectors
         """
         combined_eigenvector_score = np.zeros(params.size)
         for i in range(k):
@@ -374,7 +375,6 @@ class HessianMetrics:
                 curr_eigenvalue = eigenvalues[i].numpy()
                 combined_eigenvector = combined_eigenvector * curr_eigenvalue
             scalar_rank = np.dot(combined_eigenvector, params)
-            print(f"combined_eigenvector = {combined_eigenvector.shape}")
             combined_eigenvector_score += np.abs(scalar_rank * combined_eigenvector)
         return combined_eigenvector_score
 
@@ -670,7 +670,7 @@ class HessianMetrics:
 
         # Calculate grads over all params
         with tf.GradientTape() as inner_tape:
-            loss = self.loss_fn(self.model(self.x), self.y)
+            loss = self.loss_fn(self.y, self.model(self.x))
             grads = inner_tape.gradient(loss, params)
         grads = np.array(grads, dtype=object)
 
@@ -714,7 +714,7 @@ class HessianMetrics:
 
         # Calculate grads over all params
         with tf.GradientTape() as inner_tape:
-            loss = self.loss_fn(self.model(self.x), self.y)
+            loss = self.loss_fn(self.y, self.model(self.x))
             grads = inner_tape.gradient(loss, params)
         grads = np.array(grads, dtype=object)
 
@@ -722,7 +722,7 @@ class HessianMetrics:
         supported_indices = self.get_supported_layer_indices()
         # Sanitize grads (i.e., remove any grads from unsupported layers)
         sanitized_grads = list()
-        # TODO: Collect santized parameters so that we can multiply them with the gradients
+        # Collect santized parameters so that we can multiply them with the gradients
         sanitized_params = list()
         for i in range(len(grads)):
             if i in supported_indices:
@@ -731,16 +731,18 @@ class HessianMetrics:
         grads = np.array(sanitized_grads, dtype=object)
         params = np.array(sanitized_params, dtype=object)
 
+
         # Flatten grads & params
         flattened_grads = list()
         flattened_params = list()
-        for g in grads:
+        for g, p in zip(grads, params):
             # print(f"grad shape: {g.shape}")
             flattened_grads.extend(g.flatten())
-            flattened_params.extend(params.flatten())
+            flattened_params.extend(p.flatten())
         grads = np.array(flattened_grads)
+        params = np.array(flattened_params)
 
-        score = (grads * flattened_params) ** 2
+        score = (grads * params) ** 2
 
         # Compute ranking and rank score
         # print(f"score shape: {grads.shape}")
