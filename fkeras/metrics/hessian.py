@@ -346,13 +346,14 @@ class HessianMetrics:
 
         return eigenvalues, eigenvectors
 
-    def do_sum_hessian_rank(self, params, eigenvectors, eigenvalues, k, iter_by=2):
+    def do_sum_hessian_rank(self, params, eigenvectors, eigenvalues, k, iter_by=1):
         """
         Given flattened list of parameters, list of eigenvectors, and list of
         eigenvalues, compute the eigenvector/value scores.
 
         Combine the weight eigenvectors into a single vector for model-wide
         parameter sensitivity ranking using weighted sum strategy.
+        iter_by = 2 if ignoring biases
         Return a list of eigenvector/eigenvalue
         scores, one score for each parameter.
         Current method: weighted sum of eigenvectors
@@ -361,7 +362,6 @@ class HessianMetrics:
         for i in range(k):
             combined_eigenvector = []
             for j in range(0, len(eigenvectors[i]), iter_by):
-                # Go every 2 to ignore biases
                 # TODO: Exception is used due to the inconsistent
                 # usage of numpy arrays and tensorflow tensors.
                 # To be fixed in the future by only using np arrays.
@@ -511,7 +511,7 @@ class HessianMetrics:
 
     ###############################
 
-    def hessian_ranking_hack(self, eigenvectors, eigenvalues=None, k=1, strategy="sum"):
+    def hessian_ranking_hack(self, eigenvectors, eigenvalues=None, k=1, strategy="sum", iter_by=1):
         """
         Given list of eigenvectors and eigenvalues, compute the sensitivity.
         Use Hessian to rank parameters based on sensitivity to bit flips with
@@ -522,17 +522,21 @@ class HessianMetrics:
         for sl_i in self.layer_indices:
             super_layer = self.model.layers[sl_i]
             for l_i in self.get_layers_with_trainable_params(super_layer):
-                params.append(  # Weights only
+                params.append( 
                     self.model.layers[sl_i].layers[l_i].trainable_variables[0].numpy()
                 )
+                if self.model.layers[sl_i].layers[l_i].trainable_variables.__len__() > 1:
+                    # Add bias if it exists
+                    params.append(
+                        self.model.layers[sl_i].layers[l_i].trainable_variables[1].numpy()
+                    )
             break  # Compute for encoder only
         # Flatten and concatenate all eigenvectors into one list
         params = np.concatenate(params, axis=None)
         params = params.flatten()
-        print(f"params shape: {params.shape}")
         if strategy == "sum":
             eigenvector_rank = self.do_sum_hessian_rank(
-                params, eigenvectors, eigenvalues, k
+                params, eigenvectors, eigenvalues, k, iter_by=iter_by
             )
         elif strategy == "max":
             eigenvector_rank = self.do_max_hessian_rank(
@@ -540,7 +544,6 @@ class HessianMetrics:
             )
         param_ranking = np.flip(np.argsort(np.abs(eigenvector_rank)))
         param_scores = eigenvector_rank[param_ranking]
-        print(f"parameter_ranking: {param_ranking[:15]}")
         return param_ranking, param_scores
 
     def hessian_ranking_general(
@@ -698,19 +701,65 @@ class HessianMetrics:
 
         return param_ranking, param_rank_score
     
+    def aspis_taylor_ranking_hack(self):
+        """
+        Rank parameters based on (gradient * magnitude)^2 
+        Modified for encoder/decoder architecture
+
+        Based on: https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=10771492
+        """
+       # Get all parameters of the model and flatten and concat into one list
+        params = []
+        for sl_i in self.layer_indices:
+            super_layer = self.model.layers[sl_i]
+            for l_i in self.get_layers_with_trainable_params(super_layer):
+                params.append( 
+                    self.model.layers[sl_i].layers[l_i].trainable_variables[0]
+                )
+                if self.model.layers[sl_i].layers[l_i].trainable_variables.__len__() > 1:
+                    # Add bias if it exists
+                    params.append(
+                        self.model.layers[sl_i].layers[l_i].trainable_variables[1]
+                    )
+            break  # Compute for encoder only
+
+        # Calculate grads over all params
+        with tf.GradientTape() as inner_tape:
+            loss = self.loss_fn(self.model(self.x), self.y)
+            grads = inner_tape.gradient(loss, params)
+        grads = np.array(grads, dtype=object)
+
+        # Flatten grads
+        flattened_grads = list()
+        flattened_params = list()
+        for g, p in zip(grads, params):
+            # print(f"grad shape: {g.shape}")
+            flattened_grads.extend(np.array(g).flatten())
+            flattened_params.extend(np.array(p).flatten())
+        grads = np.array(flattened_grads)
+        params = np.array(flattened_params)
+
+        # Compute ranking and rank score
+        score = (grads * params) ** 2
+
+        # print(f"score shape: {grads.shape}")
+        param_ranking = np.flip(np.argsort(np.abs(score)))
+        param_rank_score = score[param_ranking]
+        # print(f"grad parameter_ranking: {param_ranking[:10]}")
+
+        return param_ranking, param_rank_score
 
     def aspis_taylor_ranking(self):
         """
-        TODO: Needs testing
         Rank parameters based on (gradient * magnitude)^2 
 
         Based on: https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=10771492
         """
         params = [
-                v
-                for i in self.layer_indices
-                for v in self.model.layers[i].trainable_variables
-            ]
+            v
+            for i in self.layer_indices
+            for v in self.model.layers[i].trainable_variables
+        ]
 
         # Calculate grads over all params
         with tf.GradientTape() as inner_tape:
@@ -727,7 +776,7 @@ class HessianMetrics:
         for i in range(len(grads)):
             if i in supported_indices:
                 sanitized_grads.append(np.array(grads[i]))
-                sanitized_params.append(np.array(params[i])) # TODO: Test
+                sanitized_params.append(np.array(params[i])) 
         grads = np.array(sanitized_grads, dtype=object)
         params = np.array(sanitized_params, dtype=object)
 
