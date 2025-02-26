@@ -63,10 +63,20 @@ class StatFI:
             for v in self.model.layers[i].trainable_variables
         ]
 
-        quantizers = [
+        kernel_quantizers = [
             self.model.layers[i].kernel_quantizer_internal
             for i in self.layer_indices
             if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS
         ]
+        bias_quantizers = [
+            self.model.layers[i].bias_quantizer_internal
+            for i in self.layer_indices
+            if self.model.layers[i].__class__.__name__ in SUPPORTED_LAYERS
+        ]
+        quantizers = list()
+        for i in range(len(kernel_quantizers)):
+            quantizers.append(kernel_quantizers[i])
+            if bias_quantizers[i] is not None:
+                quantizers.append(bias_quantizers[i])
 
         return np.array(params, dtype="object"), np.array(quantizers, dtype="object")
