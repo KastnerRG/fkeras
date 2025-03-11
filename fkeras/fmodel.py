@@ -18,50 +18,120 @@ NON_PARAM_LAYERS = [
     "Add",
 ]
 
-
-class FModel:
-    def __init__(self, model, model_param_ber=0, verbose=0):
+class FModelAlt:
+    def __init__(self, model, verbose=0, incl_biases=False):
         self.model = model
-        self.model_param_ber = model_param_ber
-        self.verbose = verbose
-        self._set_layer_bit_ranges()
-        self._set_model_param_ber()
-        # self.layer_bit_ranges = {}
-        # self.num_model_param_bits = 0
-        # TODO: Set layer_bit_ranges and num_model_param_bits
 
-    def set_model_param_ber(self, ber):
-        self.model_param_ber = ber
-        self._set_model_param_ber()
+        # TODO: If support is added for only flipping bits in bias,
+        # add option to not include weights
+        self.incl_weights = True
+        self.incl_biases = incl_biases
+        self.flipped_bi_to_layer_and_flbri = {}
+        self.quant_config_to_bin_float_dicts = dict()
 
-    def _set_model_param_ber(self):
-        # Set layer BERs based on the model BER
-        self.random_select_model_param_bitflip()
-
-    def _set_layer_bit_ranges(self):
         self.num_model_param_bits = 0
         self.layer_bit_ranges = OrderedDict()
-        self.num_bits_per_layer = defaultdict(int)
-        # self.bits_to_flip_per_layer = defaultdict(int)
-        # TODO: Randomly select bit index from total model parameter bits
-        # E.g., set layer1's BER accordingly if bit_idx in layer1's bit range
+        self.layer_name_to_num_total_bits_wb = defaultdict(list)
+        self.layer_name_to_num_flipped_bits_wb = defaultdict(list)
+        self.weight_bis = set()
+        self.bias_bis = set()
+
+        self.layer_name_to_lis = dict()
+
+        self.__build_bin_to_float__()
+        self.__set_layer_bit_ranges__()
+
+    def __get_bin_float_dicts__(self,curr_quant):
+        curr_quant_config = curr_quant.get_config()
+        binstr_to_float = dict()
+        float_to_binstr = dict()
+        for qvi, qval in enumerate(curr_quant.range()):
+            qval_binstr = bin(qvi)[2:].zfill(curr_quant_config["bits"])
+            binstr_to_float[qval_binstr] = qval
+            float_to_binstr[qval] = qval_binstr
+
+        return binstr_to_float, float_to_binstr
+
+    def __build_bin_to_float__(self):
+        model_weights = self.model.get_weights()
+        mwi = 0
+        for li, layer in enumerate(self.model.layers):
+            self.layer_name_to_lis[layer.name] = list()
+            for w_or_b_arr_i in range(len(layer.get_weights())):
+                self.layer_name_to_lis[layer.name] += [mwi]
+                mwi += 1
+
+            # Check if layer is (supported) QKeras layer
+            if (
+                hasattr(layer, "quantizers")
+                and layer.__class__.__name__ in SUPPORTED_LAYERS
+            ):
+                mwi_k = self.layer_name_to_lis[layer.name][0]
+                assert np.all(model_weights[mwi_k] == layer.kernel.numpy())
+                
+                if layer.kernel_quantizer_internal:
+                    curr_quant = layer.kernel_quantizer_internal
+                    curr_quant_config = curr_quant.get_config()
+                    cqc_hashable = tuple([(k,v) for k,v in curr_quant_config.items()])
+                    
+                    if cqc_hashable not in self.quant_config_to_bin_float_dicts:
+                        self.quant_config_to_bin_float_dicts[cqc_hashable] = self.__get_bin_float_dicts__(curr_quant)
+
+                if layer.use_bias:
+                    mwi_b = self.layer_name_to_lis[layer.name][1]
+                    assert np.all(model_weights[mwi_b] == layer.bias.numpy())
+
+                    if layer.bias_quantizer_internal:
+                        curr_quant = layer.bias_quantizer_internal
+                        curr_quant_config = curr_quant.get_config()
+                        cqc_hashable = tuple([(k,v) for k,v in curr_quant_config.items()])
+
+                        if cqc_hashable not in self.quant_config_to_bin_float_dicts:
+                            self.quant_config_to_bin_float_dicts[cqc_hashable] = self.__get_bin_float_dicts__(curr_quant)
+
+
+    def __set_layer_bit_ranges__(self):
         """
-        |   Layer  |   Layer2  |    etc.    |
-        |  [0, 20) |  [20, 50) | [50 - ...) |
+        |   Layer1  |   Layer2  |    etc.    |
+        |  [0, 20)  |  [20, 50) | [50 - ...) |
         """
-        for layer in self.model.layers:
+        for li, layer in enumerate(self.model.layers):
             # Check if layer is (supported) FQKeras layer
             if (
                 hasattr(layer, "quantizers")
                 and layer.__class__.__name__ in SUPPORTED_LAYERS
             ):
-                quant_config = layer.kernel_quantizer_internal.get_config()
-                num_param_bits = quant_config["bits"] * np.array(layer.kernel).size
-                self.num_bits_per_layer[layer.name] = num_param_bits
+                num_param_bits = 0
+                num_weight_bits = 0
+                num_bias_bits = 0
+
+                if self.incl_weights:
+                    assert layer.quantizers[0] == layer.kernel_quantizer
+                    num_weights = layer.kernel.numpy().size
+                    num_weight_bits = layer.kernel_quantizer.get_config()["bits"] * num_weights
+                    num_param_bits += num_weight_bits
+                    for bi in range(self.num_model_param_bits,
+                                    self.num_model_param_bits+num_weight_bits
+                    ):
+                        self.weight_bis.add(bi) 
+
+                if layer.use_bias and self.incl_biases:
+                    assert layer.quantizers[1] == layer.bias_quantizer
+                    num_biases  = layer.bias.numpy().size
+                    num_bias_bits = layer.bias_quantizer.get_config()["bits"] * num_biases
+                    num_param_bits += num_bias_bits
+                    for bi in range(self.num_model_param_bits+num_weight_bits,
+                                    self.num_model_param_bits+num_weight_bits+num_bias_bits
+                    ):
+                        self.bias_bis.add(bi)
+                
+                self.layer_name_to_num_total_bits_wb[layer.name] = (num_weight_bits, num_bias_bits)
+                self.layer_name_to_num_flipped_bits_wb[layer.name] = [0, 0]
                 start_idx = self.num_model_param_bits
                 end_idx = self.num_model_param_bits + num_param_bits
                 self.layer_bit_ranges[(start_idx, end_idx)] = layer
                 self.num_model_param_bits += num_param_bits
+            
             # TODO: Need separate branch for when SUPPORTED_LAYERS includes
             # regular float Keras layers, i.e., shouldn't check if layer has any
             # quantizers.
@@ -73,79 +143,133 @@ class FModel:
                 raise NotImplementedError(
                     f"Injecting faults in {layer.__class__.__name__} layer not yet supported."
                 )
-        if self.verbose > 0:
-            print(f"[fkeras.fmodel._set_layer_bit_ranges] {self.num_model_param_bits}")
+    
+    def explicitly_flip_bits(self, bits_to_flip):
+        internal_bits_to_flip = sorted(bits_to_flip)
 
-    def explicit_select_model_param_bitflip(self, bits_to_flip):
-        """
-        Explicitly select which bits to flip in the model's parameters at the
-        model's BER. This function will choose the appropriate layer BERs needed
-        to carry out the specified bit flips deterministically.
+        actual_bits_to_flip = list()
 
-        If you want to run multiple trials of the same faulty model
-        (defined by the flipped bits), call this function for each trial.
+        for bit in internal_bits_to_flip:
 
-        The number of faults to be injected into the model's parameters = len(bits_to_flip).
-        """
-        bits_to_flip_per_layer = defaultdict(int)
-        # num_faults = int(self.num_model_param_bits * self.model_param_ber)
+            if bit not in self.flipped_bi_to_layer_and_flbri:
 
-        if self.verbose > 0:
-            print(
-                f"[fkeras.fmodel.explicit_select_model_param_bitflip] num_faults = {len(bits_to_flip)}"
-            )
-        # bits_to_flip = random.sample(list(range(self.num_model_param_bits)), num_faults)
-        bits_to_flip.sort()
-        # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] {bits_to_flip}")
-        for bit in bits_to_flip:
-            # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] {bit}")
-            # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] self.layer_bit_ranges = {self.layer_bit_ranges}")
-            for r in self.layer_bit_ranges.keys():
-                # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] {bit} {r}")
-                if bit >= r[0] and bit < r[1]:  # If bit within range
-                    layer = self.layer_bit_ranges[r]
-                    bits_to_flip_per_layer[layer.name] += 1
-                    # print(f"[fkeras.fmodel.explicit_select_model_param_bitflip] bits_to_flip_per_layer = {bits_to_flip_per_layer[layer.name]}")
-                    layer.flbrs = [
-                        fk.utils.FaultyLayerBitRegion(bit - r[0], bit - r[0], 1.0)
-                    ]
+                for r in self.layer_bit_ranges.keys():
+                    if bit >= r[0] and bit < r[1]:  # If bit within range
+                        layer = self.layer_bit_ranges[r]
 
-        for layer in self.model.layers:
-            if layer.__class__.__name__ in SUPPORTED_LAYERS:
-                layer.set_ber(
-                    bits_to_flip_per_layer[layer.name]
-                    / self.num_bits_per_layer[layer.name]
+                        assoc_lis = self.layer_name_to_lis[layer.name]
+                        num_w_bits, num_b_bits = self.layer_name_to_num_total_bits_wb[layer.name]
+                        num_ws = layer.kernel.numpy().size
+                        num_bs = layer.bias.numpy().size
+                        w_bitwidth = num_w_bits/num_ws
+                        b_bitwidth = num_b_bits/num_bs
+
+                        layer_bi = bit-r[0]
+
+
+                        if bit in self.weight_bis:
+                            layer_wi = int(layer_bi // w_bitwidth)
+                            layer_wbi = int(layer_bi % w_bitwidth)
+                            curr_quant = layer.kernel_quantizer_internal
+                            curr_quant_config = curr_quant.get_config()
+                            cqc_hashable = tuple([(k,v) for k,v in curr_quant_config.items()])
+
+                            self.layer_name_to_num_flipped_bits_wb[layer.name][0] += 1
+                            self.flipped_bi_to_layer_and_flbri[bit] = (
+                                layer,
+                                cqc_hashable,
+                                assoc_lis[0],
+                                layer_bi,
+                                layer_wi,
+                                layer_wbi,
+                            )
+                            actual_bits_to_flip.append(
+                                self.flipped_bi_to_layer_and_flbri[bit]
+                            )
+
+                        elif bit in self.bias_bis:
+                            layer_bi = bit-r[0]-num_w_bits
+                            layer_wi = int(layer_bi // b_bitwidth)
+                            layer_wbi = int(layer_bi % b_bitwidth)
+
+                            curr_quant = layer.bias_quantizer_internal
+                            curr_quant_config = curr_quant.get_config()
+                            cqc_hashable = tuple([(k,v) for k,v in curr_quant_config.items()])
+
+                            self.layer_name_to_num_flipped_bits_wb[layer.name][1] += 1
+                            self.flipped_bi_to_layer_and_flbri[bit] = (
+                                layer, 
+                                cqc_hashable,
+                                assoc_lis[1],
+                                layer_bi,
+                                layer_wi,
+                                layer_wbi,
+                            )
+                            actual_bits_to_flip.append(
+                                self.flipped_bi_to_layer_and_flbri[bit]
+                            )
+        
+        if len(actual_bits_to_flip) > 0:
+            new_params = [np.copy(arr) for arr in self.model.get_weights()]
+            
+            for l, cqc_hashable, li_adj, _, wi, wbi in actual_bits_to_flip:
+                assoc_quant = None
+                if li_adj == self.layer_name_to_lis[l.name][0]:
+                    assoc_quant = l.kernel_quantizer_internal
+                else:
+                    assoc_quant = l.bias_quantizer_internal
+
+                orig_shape = new_params[li_adj].shape
+                faulty_w_or_b_arr = new_params[li_adj].flatten()
+                qval = faulty_w_or_b_arr[wi]
+                qval = assoc_quant(qval).numpy()
+                qbin = self.quant_config_to_bin_float_dicts[cqc_hashable][1][qval]
+                flipped_bit = "1" if qbin[wbi] == "0" else "0"
+                qbin_f = qbin[:wbi] + flipped_bit + qbin[wbi+1:]
+                qval_f = self.quant_config_to_bin_float_dicts[cqc_hashable][0][qbin_f]
+                faulty_w_or_b_arr[wi] = qval_f
+                new_params[li_adj] = faulty_w_or_b_arr.reshape(orig_shape)
+            
+            self.model.set_weights(new_params)
+
+
+    def explicitly_reset_bits(self, bits_to_reset):
+        internal_bits_to_reset = sorted(bits_to_reset)
+
+        actual_bits_to_reset = list()
+
+        for bit in internal_bits_to_reset:
+
+            if bit in self.flipped_bi_to_layer_and_flbri:
+                actual_bits_to_reset.append(
+                    self.flipped_bi_to_layer_and_flbri[bit]
                 )
 
-    def random_select_model_param_bitflip(self):
-        """
-        Randomly select which bit to flip in the model's parameters at the
-        model's BER. This function will choose the appropriate layer BERs needed
-        to carry out the specified model BER randomly.
+                self.flipped_bi_to_layer_and_flbri.pop(bit)
+        
+        if len(actual_bits_to_reset) > 0:
+            new_params = [np.copy(arr) for arr in self.model.get_weights()]
+            
+            for l, cqc_hashable, li_adj, _, wi, wbi in actual_bits_to_reset:
+                assoc_quant = None
+                if li_adj == self.layer_name_to_lis[l.name][0]:
+                    assoc_quant = l.kernel_quantizer_internal
+                else:
+                    assoc_quant = l.bias_quantizer_internal
+                orig_shape = new_params[li_adj].shape
+                faulty_w_or_b_arr = new_params[li_adj].flatten()
+                qval = faulty_w_or_b_arr[wi]
+                qval = assoc_quant(qval).numpy()
+                qbin = self.quant_config_to_bin_float_dicts[cqc_hashable][1][qval]
+                flipped_bit = "1" if qbin[wbi] == "0" else "0"
+                qbin_f = qbin[:wbi] + flipped_bit + qbin[wbi+1:]
+                qval_f = self.quant_config_to_bin_float_dicts[cqc_hashable][0][qbin_f]
+                faulty_w_or_b_arr[wi] = qval_f
+                new_params[li_adj] = faulty_w_or_b_arr.reshape(orig_shape)
 
-        If you want to run multiple trials of the same model BER, call this
-        function for each trial.
-
-        The number of faults to be injected into the model's parameters = ber *
-        num_model_param_bits.
-        """
-        bits_to_flip_per_layer = defaultdict(int)
-        num_faults = int(self.num_model_param_bits * self.model_param_ber)
-        if self.verbose > 0:
-            print(f"num_faults = {num_faults}")
-        bits_to_flip = random.sample(list(range(self.num_model_param_bits)), num_faults)
-        bits_to_flip.sort()
-        for bit in bits_to_flip:
-            for r in self.layer_bit_ranges.keys():
-                if bit >= r[0] and bit < r[1]:  # If bit within range
-                    bits_to_flip_per_layer[layer.name] += 1
-                    layer.flbrs = [
-                        fk.utils.FaultyLayerBitRegion(bit - r[0], bit - r[0], 1.0)
-                    ]
-
-        for layer in self.model.layers:
-            if layer.__class__.__name__ in SUPPORTED_LAYERS:
-                layer.set_ber(
-                    bits_to_flip_per_layer[layer.name]
-                    / self.num_bits_per_layer[layer.name]
-                )
+                if li_adj == self.layer_name_to_lis[l.name][0]:
+                    self.layer_name_to_num_flipped_bits_wb[l.name][0] -= 1
+                else:
+                    self.layer_name_to_num_flipped_bits_wb[l.name][1] -= 1
+            
+            self.model.set_weights(new_params)
