@@ -63,6 +63,12 @@ class FaultyLayerBitRegion(LayerBitRegion):
     def __init__(self, i_start_lbi, end_lbi, ber):
         super().__init__(i_start_lbi, end_lbi)
         self.ber = ber
+    
+    def __repr__(self):
+        repr_str = "fkeras.utils.FaultyLayerBitRegion"
+        repr_str += f"({self.start_lbi}, {self.end_lbi}, {self.ber})"
+
+        return repr_str
 
 
 def gen_lbi_region_from_weight_level(

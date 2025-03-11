@@ -49,45 +49,4 @@ class FQDense(QDense):
         return config
 
     def call(self, inputs):
-        # if not self.accum_faults and (self.og_kernel is None):
-        #     self.og_kernel = self.kernel
-
-        if self.ber == 0:  # For speed
-            return super().call(inputs)
-        # TODO: Update the following code block with function call that
-        ###### returns the same lbi region
-        quant_config = self.kernel_quantizer_internal.get_config()
-        faulty_layer_bit_region = gen_lbi_region_at_layer_level(
-            self.kernel,
-            quant_config["bits"],
-            self.ber,
-        )[0]
-        faulty_qkernel = fk.utils.quantize_and_bitflip_deterministic_v3(
-            self.kernel,  # if self.accum_faults else self.og_kernel,
-            self.kernel_quantizer_internal,
-            self.flbrs,  # [(faulty_layer_bit_region.start_lbi, faulty_layer_bit_region.end_lbi)],
-            [faulty_layer_bit_region.ber],
-        )
-
-        self.kernel.assign(faulty_qkernel)
-
-        # Useful for debugging purposes
-        # qkernel = self.kernel_quantizer_internal(self.kernel)
-        # equality_tensor = tf.math.equal(qkernel, faulty_qkernel)
-        # tf.print("Equality tensor:")
-        # tf.print(equality_tensor)
-        # tf.print("Reduced DENSE equality tensor:")
-        # tf.print(tf.math.reduce_all(equality_tensor)) # Logical and across all elements of tensor
-
-        output = tf.keras.backend.dot(inputs, self.kernel)  # faulty_qkernel)
-        if self.use_bias:
-            if self.bias_quantizer:
-                quantized_bias = self.bias_quantizer_internal(self.bias)
-            else:
-                quantized_bias = self.bias
-            output = tf.keras.backend.bias_add(
-                output, quantized_bias, data_format="channels_last"
-            )
-        if self.activation is not None:
-            output = self.activation(output)
-        return output
+        return super().call(inputs)
