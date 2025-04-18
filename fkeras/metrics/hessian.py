@@ -47,7 +47,7 @@ class HessianMetrics:
                 layer_indices.append(i)
         return layer_indices
 
-    def get_supported_layer_indices(self, include_bias=False):
+    def get_supported_layer_indices(self, include_bias=True):
         # Get indices of parameters in supported layers
         supported_indices = []
         running_idx = 0
@@ -716,11 +716,11 @@ class HessianMetrics:
                 params.append( 
                     self.model.layers[sl_i].layers[l_i].trainable_variables[0]
                 )
-                # if self.model.layers[sl_i].layers[l_i].trainable_variables.__len__() > 1:
-                #     # Add bias if it exists
-                #     params.append(
-                #         self.model.layers[sl_i].layers[l_i].trainable_variables[1]
-                #     )
+                if self.model.layers[sl_i].layers[l_i].trainable_variables.__len__() > 1:
+                    # Add bias if it exists
+                    params.append(
+                        self.model.layers[sl_i].layers[l_i].trainable_variables[1]
+                    )
             break  # Compute for encoder only
 
         # Calculate grads over all params
